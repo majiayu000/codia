@@ -1,2 +1,2 @@
-export { CanvasContainer } from "./CanvasContainer";
-export { VRMCharacter } from "./VRMCharacter";
+export { CanvasContainer, type GestureController } from "./CanvasContainer";
+export { VRMCharacter, type VRMCharacterHandle } from "./VRMCharacter";

@@ -15,6 +15,12 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // Use Turbopack (Next.js 16 default)
+  turbopack: {},
+
+  // Disable strict mode to prevent double rendering in dev
+  reactStrictMode: false,
 };
 
 export default nextConfig;

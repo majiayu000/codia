@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { VRM } from "@pixiv/three-vrm";
 import {
   loadVRM,
   ExpressionAnimator,
   LipSyncService,
-  IdleAnimationService,
+  LivelyIdleAnimationService,
+  GestureAnimationService,
   type BasicExpression,
+  type GestureType,
 } from "@/services";
 
 interface VRMCharacterProps {
@@ -21,21 +23,41 @@ interface VRMCharacterProps {
   onLoadProgress?: (progress: number) => void;
 }
 
-export function VRMCharacter({
-  url,
-  expression = "neutral",
-  isSpeaking = false,
-  speakingText = "",
-  onLoad,
-  onError,
-  onLoadProgress,
-}: VRMCharacterProps) {
+export interface VRMCharacterHandle {
+  playGesture: (gesture: GestureType) => void;
+  isPlayingGesture: () => boolean;
+}
+
+export const VRMCharacter = forwardRef<VRMCharacterHandle, VRMCharacterProps>(
+  function VRMCharacter(
+    {
+      url,
+      expression = "neutral",
+      isSpeaking = false,
+      speakingText = "",
+      onLoad,
+      onError,
+      onLoadProgress,
+    },
+    ref
+  ) {
   const [vrm, setVrm] = useState<VRM | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const expressionAnimator = useRef(new ExpressionAnimator());
   const lipSyncService = useRef(new LipSyncService());
-  const idleAnimation = useRef(new IdleAnimationService());
+  const livelyAnimation = useRef(new LivelyIdleAnimationService());
+  const gestureAnimation = useRef(new GestureAnimationService());
   const { scene } = useThree();
+
+  // Expose methods via ref
+  useImperativeHandle(ref, () => ({
+    playGesture: (gesture: GestureType) => {
+      gestureAnimation.current.playGesture(gesture);
+    },
+    isPlayingGesture: () => {
+      return gestureAnimation.current.isPlaying();
+    },
+  }));
 
   // Load VRM
   useEffect(() => {
@@ -60,7 +82,8 @@ export function VRMCharacter({
         // Initialize services
         expressionAnimator.current.setVRM(loadedVrm);
         lipSyncService.current.setVRM(loadedVrm);
-        idleAnimation.current.setVRM(loadedVrm);
+        livelyAnimation.current.setVRM(loadedVrm);
+        gestureAnimation.current.setVRM(loadedVrm);
 
         onLoad?.(loadedVrm);
         setIsLoading(false);
@@ -103,7 +126,14 @@ export function VRMCharacter({
     // Update animations
     expressionAnimator.current.update(delta);
     lipSyncService.current.update(delta);
-    idleAnimation.current.update(delta);
+
+    // Only run lively idle animation when not playing a gesture
+    if (!gestureAnimation.current.isPlaying()) {
+      livelyAnimation.current.update(delta);
+    }
+
+    // Always update gesture animation
+    gestureAnimation.current.update(delta);
   });
 
   if (isLoading) {
@@ -111,4 +141,4 @@ export function VRMCharacter({
   }
 
   return null; // VRM is added directly to scene
-}
+});

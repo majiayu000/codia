@@ -1,13 +1,18 @@
 "use client";
 
-import { Suspense, useState, useCallback } from "react";
+import { Suspense, useState, useCallback, useRef, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment, PerspectiveCamera, Stats } from "@react-three/drei";
 import { VRM } from "@pixiv/three-vrm";
 import { LoadingSpinner } from "@/components/ui";
-import { VRMCharacter } from "./VRMCharacter";
+import { VRMCharacter, type VRMCharacterHandle } from "./VRMCharacter";
 import { cn } from "@/lib/utils";
-import type { BasicExpression } from "@/services";
+import type { BasicExpression, GestureType } from "@/services";
+
+export interface GestureController {
+  playGesture: (gesture: GestureType) => void;
+  isPlaying: () => boolean;
+}
 
 interface CanvasContainerProps {
   className?: string;
@@ -18,6 +23,7 @@ interface CanvasContainerProps {
   showStats?: boolean;
   onVRMLoad?: (vrm: VRM) => void;
   onVRMError?: (error: Error) => void;
+  onGestureReady?: (controller: GestureController) => void;
 }
 
 function CanvasLoader() {
@@ -58,8 +64,23 @@ function Scene({
   showStats,
   onVRMLoad,
   onVRMError,
+  onGestureReady,
 }: Omit<CanvasContainerProps, "className">) {
   const [loadProgress, setLoadProgress] = useState(0);
+  const characterRef = useRef<VRMCharacterHandle>(null);
+
+  // Expose gesture controller when character is loaded
+  const handleVRMLoad = useCallback((vrm: VRM) => {
+    onVRMLoad?.(vrm);
+
+    // Create gesture controller
+    if (characterRef.current && onGestureReady) {
+      onGestureReady({
+        playGesture: (gesture) => characterRef.current?.playGesture(gesture),
+        isPlaying: () => characterRef.current?.isPlayingGesture() ?? false,
+      });
+    }
+  }, [onVRMLoad, onGestureReady]);
 
   return (
     <>
@@ -87,11 +108,12 @@ function Scene({
 
       {vrmUrl ? (
         <VRMCharacter
+          ref={characterRef}
           url={vrmUrl}
           expression={expression}
           isSpeaking={isSpeaking}
           speakingText={speakingText}
-          onLoad={onVRMLoad}
+          onLoad={handleVRMLoad}
           onError={onVRMError}
           onLoadProgress={setLoadProgress}
         />
@@ -113,6 +135,7 @@ export function CanvasContainer({
   showStats = false,
   onVRMLoad,
   onVRMError,
+  onGestureReady,
 }: CanvasContainerProps) {
   return (
     <div
@@ -136,6 +159,7 @@ export function CanvasContainer({
             showStats={showStats}
             onVRMLoad={onVRMLoad}
             onVRMError={onVRMError}
+            onGestureReady={onGestureReady}
           />
         </Canvas>
       </Suspense>

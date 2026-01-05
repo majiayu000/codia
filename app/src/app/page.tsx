@@ -6,6 +6,7 @@ import { MainLayout } from "@/components/layout";
 import { MessageList, ChatInput, type Message } from "@/components/chat";
 import { SettingsPanel } from "@/components/settings";
 import { useToast } from "@/components/ui";
+import { GesturePanel } from "@/components/ui/GesturePanel";
 import {
   useChatStore,
   useCharacterStore,
@@ -18,7 +19,9 @@ import {
   stopListening,
   isASRSupported,
   type BasicExpression,
+  type GestureType,
 } from "@/services";
+import type { GestureController } from "@/components/canvas";
 
 const CanvasContainer = dynamic(
   () => import("@/components/canvas").then((mod) => mod.CanvasContainer),
@@ -29,6 +32,7 @@ export default function Home() {
   const [expression, setExpression] = useState<BasicExpression>("neutral");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakingText, setSpeakingText] = useState("");
+  const [gestureController, setGestureController] = useState<GestureController | null>(null);
 
   const { addToast } = useToast();
 
@@ -183,7 +187,15 @@ export default function Home() {
             expression={expression}
             isSpeaking={isSpeaking}
             speakingText={speakingText}
+            onGestureReady={setGestureController}
           />
+          {/* Gesture Test Panel */}
+          {gestureController && (
+            <GesturePanel
+              onGesture={(gesture) => gestureController.playGesture(gesture)}
+              disabled={gestureController.isPlaying()}
+            />
+          )}
         </div>
 
         {/* Chat Section */}

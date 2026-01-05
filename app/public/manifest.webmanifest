@@ -1,0 +1,16 @@
+{
+  "name": "Codia - AI Virtual Companion",
+  "short_name": "Codia",
+  "description": "3D AI Virtual Companion with intelligent features",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/globe.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

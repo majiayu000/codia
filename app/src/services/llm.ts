@@ -1,5 +1,15 @@
 import type { Message } from "@/store/types";
 import type { BasicExpression } from "./expression";
+import { getLongTermMemory, getShortTermMemory, createMemoryExtractor } from "./memory";
+import type { MemoryContext } from "./memory";
+import {
+  getEmotionAnalyzer,
+  getResponseStrategyEngine,
+  mapToBasicExpression,
+  type EmotionAnalysisResult,
+  type EmotionContext,
+  type ResponseStrategy,
+} from "./emotion";
 
 export interface LLMConfig {
   provider: "openai" | "anthropic" | "ollama";
@@ -13,6 +23,8 @@ export interface LLMConfig {
 export interface LLMResponse {
   content: string;
   emotion?: BasicExpression;
+  emotionAnalysis?: EmotionAnalysisResult;
+  responseStrategy?: ResponseStrategy;
   finishReason?: string;
 }
 
@@ -194,24 +206,189 @@ export async function chat(
   return result.value;
 }
 
+/**
+ * Quick synchronous emotion detection (for backwards compatibility)
+ * Uses the EmotionAnalyzer's quickDetect method
+ */
 function detectEmotion(text: string): BasicExpression {
-  const lowerText = text.toLowerCase();
+  const analyzer = getEmotionAnalyzer();
+  const result = analyzer.quickDetect(text);
+  return mapToBasicExpression(result.primary);
+}
 
-  const emotionPatterns: Array<[BasicExpression, RegExp[]]> = [
-    ["happy", [/happy|joy|excited|great|wonderful|love|amazing|fantastic/]],
-    ["sad", [/sad|sorry|unfortunately|miss|regret|disappointed/]],
-    ["angry", [/angry|frustrated|annoyed|upset|mad/]],
-    ["surprised", [/wow|surprising|unexpected|amazing|incredible|whoa/]],
-    ["relaxed", [/calm|peaceful|relaxed|chill|comfortable/]],
-  ];
+/**
+ * Analyze emotion from user message (async, more accurate)
+ */
+async function analyzeUserEmotion(message: Message): Promise<EmotionAnalysisResult> {
+  const analyzer = getEmotionAnalyzer();
+  return analyzer.analyze(message);
+}
 
-  for (const [emotion, patterns] of emotionPatterns) {
-    for (const pattern of patterns) {
-      if (pattern.test(lowerText)) {
-        return emotion;
+/**
+ * Generate response strategy based on emotion analysis
+ */
+function generateResponseStrategy(
+  emotionAnalysis: EmotionAnalysisResult,
+  emotionContext?: EmotionContext
+): ResponseStrategy {
+  const strategyEngine = getResponseStrategyEngine();
+  if (emotionContext) {
+    return strategyEngine.generateStrategyWithContext(emotionAnalysis, emotionContext);
+  }
+  return strategyEngine.generateStrategy(emotionAnalysis);
+}
+
+// ================== Memory-enhanced Chat ==================
+
+export interface MemoryEnhancedConfig extends Partial<LLMConfig> {
+  enableMemory?: boolean;
+  extractMemoryAfterResponse?: boolean;
+  enableEmotionAnalysis?: boolean;
+  applyResponseStrategy?: boolean;
+}
+
+/**
+ * Stream chat with memory and emotion enhancement
+ * Automatically injects memory context and emotion-aware guidance into the system prompt
+ */
+export async function* streamChatWithMemory(
+  messages: Message[],
+  systemPrompt: string,
+  config: MemoryEnhancedConfig = {}
+): AsyncGenerator<string, LLMResponse & { memoryContext?: MemoryContext; emotionContext?: EmotionContext }, unknown> {
+  const {
+    enableMemory = true,
+    extractMemoryAfterResponse = true,
+    enableEmotionAnalysis = true,
+    applyResponseStrategy = true,
+    ...llmConfig
+  } = config;
+
+  let enhancedPrompt = systemPrompt;
+  let memoryContext: MemoryContext | undefined;
+  let emotionAnalysis: EmotionAnalysisResult | undefined;
+  let responseStrategy: ResponseStrategy | undefined;
+  let emotionContext: EmotionContext | undefined;
+
+  // Get the last user message for analysis
+  const lastUserMessage = messages.filter((m) => m.role === "user").pop();
+
+  // Analyze user emotion if enabled
+  if (enableEmotionAnalysis && lastUserMessage) {
+    try {
+      emotionAnalysis = await analyzeUserEmotion(lastUserMessage);
+      emotionContext = getEmotionAnalyzer().getEmotionContext();
+
+      // Generate response strategy
+      if (applyResponseStrategy) {
+        responseStrategy = generateResponseStrategy(emotionAnalysis, emotionContext);
+
+        // Inject response strategy into prompt
+        const strategyEngine = getResponseStrategyEngine();
+        const strategyPrompt = strategyEngine.formatStrategyForPrompt(responseStrategy);
+        enhancedPrompt = `${enhancedPrompt}\n\n${strategyPrompt}`;
       }
+    } catch (error) {
+      console.error("Failed to analyze emotion:", error);
     }
   }
 
-  return "neutral";
+  // Inject memory context if enabled
+  if (enableMemory) {
+    try {
+      const longTermMemory = getLongTermMemory();
+      const query = lastUserMessage?.content;
+
+      // Get memory context
+      memoryContext = await longTermMemory.generateContext(query);
+
+      // Format and append to system prompt
+      const memoryPromptSection = await longTermMemory.formatForSystemPrompt(query);
+      if (memoryPromptSection) {
+        enhancedPrompt = `${enhancedPrompt}\n\n${memoryPromptSection}`;
+      }
+
+      // Update short-term memory with current messages
+      const shortTermMemory = getShortTermMemory();
+      for (const msg of messages.slice(-5)) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          shortTermMemory.add(msg);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load memory context:", error);
+    }
+  }
+
+  // Stream the response
+  const generator = streamChat(messages, enhancedPrompt, llmConfig);
+  let fullContent = "";
+
+  while (true) {
+    const result = await generator.next();
+    if (result.done) {
+      const response = result.value;
+
+      // Extract memories from this conversation if enabled
+      if (enableMemory && extractMemoryAfterResponse) {
+        extractMemoriesInBackground(messages, response.content);
+      }
+
+      return {
+        ...response,
+        emotionAnalysis,
+        responseStrategy,
+        memoryContext,
+        emotionContext,
+      };
+    }
+
+    fullContent += result.value;
+    yield result.value;
+  }
+}
+
+/**
+ * Extract memories in background (non-blocking)
+ */
+async function extractMemoriesInBackground(
+  messages: Message[],
+  aiResponse: string
+): Promise<void> {
+  try {
+    const longTermMemory = getLongTermMemory();
+    const extractor = createMemoryExtractor(longTermMemory);
+
+    // Add the AI response to messages for extraction
+    const allMessages: Message[] = [
+      ...messages,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: aiResponse,
+        timestamp: new Date(),
+      },
+    ];
+
+    // Extract and save memories
+    await extractor.extractAndSave(allMessages.slice(-10), "conversation");
+  } catch (error) {
+    console.error("Memory extraction failed:", error);
+  }
+}
+
+/**
+ * Get current memory context for display
+ */
+export async function getMemoryContext(query?: string): Promise<MemoryContext> {
+  const longTermMemory = getLongTermMemory();
+  return longTermMemory.generateContext(query);
+}
+
+/**
+ * Format memory context as a string for debugging
+ */
+export async function formatMemoryContextForDebug(): Promise<string> {
+  const longTermMemory = getLongTermMemory();
+  return longTermMemory.formatForSystemPrompt();
 }

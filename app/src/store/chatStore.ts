@@ -1,11 +1,18 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Message, Conversation } from "./types";
+import type { UserProfile, MemoryEntry, MemoryContext } from "@/services/memory";
 
 interface ChatState {
   conversations: Conversation[];
   currentConversationId: string | null;
   isStreaming: boolean;
+
+  // Memory system state
+  userProfile: UserProfile | null;
+  memoryContext: MemoryContext | null;
+  recentMemories: MemoryEntry[];
+  isExtractingMemory: boolean;
 
   // Actions
   createConversation: (characterId: string) => string;
@@ -16,6 +23,13 @@ interface ChatState {
   clearMessages: (conversationId: string) => void;
   setStreaming: (isStreaming: boolean) => void;
   getCurrentMessages: () => Message[];
+
+  // Memory actions
+  setUserProfile: (profile: UserProfile | null) => void;
+  setMemoryContext: (context: MemoryContext | null) => void;
+  addMemory: (memory: MemoryEntry) => void;
+  setRecentMemories: (memories: MemoryEntry[]) => void;
+  setExtractingMemory: (isExtracting: boolean) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -24,6 +38,12 @@ export const useChatStore = create<ChatState>()(
       conversations: [],
       currentConversationId: null,
       isStreaming: false,
+
+      // Memory system initial state
+      userProfile: null,
+      memoryContext: null,
+      recentMemories: [],
+      isExtractingMemory: false,
 
       createConversation: (characterId: string) => {
         const id = crypto.randomUUID();
@@ -119,6 +139,29 @@ export const useChatStore = create<ChatState>()(
           (c) => c.id === state.currentConversationId
         );
         return conversation?.messages ?? [];
+      },
+
+      // Memory actions
+      setUserProfile: (profile: UserProfile | null) => {
+        set({ userProfile: profile });
+      },
+
+      setMemoryContext: (context: MemoryContext | null) => {
+        set({ memoryContext: context });
+      },
+
+      addMemory: (memory: MemoryEntry) => {
+        set((state) => ({
+          recentMemories: [memory, ...state.recentMemories].slice(0, 20),
+        }));
+      },
+
+      setRecentMemories: (memories: MemoryEntry[]) => {
+        set({ recentMemories: memories });
+      },
+
+      setExtractingMemory: (isExtracting: boolean) => {
+        set({ isExtractingMemory: isExtracting });
       },
     }),
     {
