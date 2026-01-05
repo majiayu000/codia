@@ -5,7 +5,7 @@ import type { Character } from "./types";
 const DEFAULT_CHARACTER: Character = {
   id: "default",
   name: "Codia",
-  vrmUrl: "",
+  vrmUrl: "/sample.vrm",
   systemPrompt: `You are Codia, a friendly and helpful AI virtual companion. You are cheerful, empathetic, and always ready to help. You express emotions naturally in your responses.
 
 Key traits:

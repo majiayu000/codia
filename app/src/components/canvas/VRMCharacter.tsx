@@ -41,11 +41,19 @@ export function VRMCharacter({
   useEffect(() => {
     setIsLoading(true);
 
+    console.log("Loading VRM from:", url);
     loadVRM(url, {
-      onProgress: onLoadProgress,
-      onError,
+      onProgress: (p) => {
+        console.log("VRM load progress:", p);
+        onLoadProgress?.(p);
+      },
+      onError: (e) => {
+        console.error("VRM load error:", e);
+        onError?.(e);
+      },
     })
       .then((loadedVrm) => {
+        console.log("VRM loaded successfully:", loadedVrm);
         setVrm(loadedVrm);
         scene.add(loadedVrm.scene);
 
@@ -58,6 +66,7 @@ export function VRMCharacter({
         setIsLoading(false);
       })
       .catch((error) => {
+        console.error("VRM catch error:", error);
         setIsLoading(false);
         onError?.(error);
       });

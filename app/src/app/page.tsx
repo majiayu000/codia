@@ -179,7 +179,7 @@ export default function Home() {
         <div className="relative h-[40vh] lg:h-full lg:w-1/2 xl:w-2/5 p-4">
           <CanvasContainer
             className="h-full"
-            vrmUrl={currentCharacter.vrmUrl || undefined}
+            vrmUrl={currentCharacter.vrmUrl || "/sample.vrm"}
             expression={expression}
             isSpeaking={isSpeaking}
             speakingText={speakingText}
