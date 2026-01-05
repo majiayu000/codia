@@ -1,0 +1,264 @@
+@import "tailwindcss";
+
+/* ============================================
+   Codia Design System - CSS Variables
+   ============================================ */
+
+:root {
+  /* Primary Colors (Purple - Interactive/Accent) */
+  --primary-50: #FDF4FF;
+  --primary-100: #FAE8FF;
+  --primary-200: #F5D0FE;
+  --primary-300: #F0ABFC;
+  --primary-400: #E879F9;
+  --primary-500: #D946EF;
+  --primary-600: #C026D3;
+  --primary-700: #A21CAF;
+  --primary-800: #86198F;
+  --primary-900: #701A75;
+
+  /* Secondary Colors (Slate - Background/Text) */
+  --secondary-50: #F8FAFC;
+  --secondary-100: #F1F5F9;
+  --secondary-200: #E2E8F0;
+  --secondary-300: #CBD5E1;
+  --secondary-400: #94A3B8;
+  --secondary-500: #64748B;
+  --secondary-600: #475569;
+  --secondary-700: #334155;
+  --secondary-800: #1E293B;
+  --secondary-900: #0F172A;
+
+  /* Accent Colors */
+  --accent-cyan: #22D3EE;
+  --accent-green: #22C55E;
+  --accent-amber: #F59E0B;
+  --accent-red: #EF4444;
+
+  /* Semantic Colors - Light Mode */
+  --bg-canvas: var(--secondary-50);
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+
+  --text-primary: var(--secondary-900);
+  --text-secondary: var(--secondary-600);
+  --text-muted: var(--secondary-400);
+  --text-inverse: #FFFFFF;
+
+  --border-default: var(--secondary-200);
+  --border-hover: var(--secondary-300);
+  --border-focus: var(--primary-500);
+
+  /* Component Tokens */
+  --radius-sm: 4px;
+  --radius-default: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-default: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-glow-primary: 0 0 20px rgb(217 70 239 / 0.3);
+  --shadow-glow-voice: 0 0 20px rgb(34 211 238 / 0.4);
+
+  /* Animation */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Dark Mode */
+.dark {
+  --bg-canvas: #0F0F1A;
+  --bg-surface: #1A1A2E;
+  --bg-elevated: #252540;
+  --bg-overlay: rgba(0, 0, 0, 0.7);
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-inverse: #0F172A;
+
+  --border-default: #334155;
+  --border-hover: #475569;
+  --border-focus: #E879F9;
+
+  /* Brighter primary in dark mode */
+  --primary-500: #E879F9;
+}
+
+/* System Dark Mode Preference */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg-canvas: #0F0F1A;
+    --bg-surface: #1A1A2E;
+    --bg-elevated: #252540;
+    --bg-overlay: rgba(0, 0, 0, 0.7);
+
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --text-inverse: #0F172A;
+
+    --border-default: #334155;
+    --border-hover: #475569;
+    --border-focus: #E879F9;
+
+    --primary-500: #E879F9;
+  }
+}
+
+/* Tailwind v4 Theme Extensions */
+@theme inline {
+  /* Colors */
+  --color-primary-50: var(--primary-50);
+  --color-primary-100: var(--primary-100);
+  --color-primary-200: var(--primary-200);
+  --color-primary-300: var(--primary-300);
+  --color-primary-400: var(--primary-400);
+  --color-primary-500: var(--primary-500);
+  --color-primary-600: var(--primary-600);
+  --color-primary-700: var(--primary-700);
+  --color-primary-800: var(--primary-800);
+  --color-primary-900: var(--primary-900);
+
+  --color-secondary-50: var(--secondary-50);
+  --color-secondary-100: var(--secondary-100);
+  --color-secondary-200: var(--secondary-200);
+  --color-secondary-300: var(--secondary-300);
+  --color-secondary-400: var(--secondary-400);
+  --color-secondary-500: var(--secondary-500);
+  --color-secondary-600: var(--secondary-600);
+  --color-secondary-700: var(--secondary-700);
+  --color-secondary-800: var(--secondary-800);
+  --color-secondary-900: var(--secondary-900);
+
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-green: var(--accent-green);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-red: var(--accent-red);
+
+  /* Semantic */
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-elevated: var(--bg-elevated);
+
+  /* Fonts */
+  --font-sans: "Inter", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus Styles */
+*:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: var(--primary-200);
+  color: var(--primary-900);
+}
+
+.dark ::selection {
+  background-color: var(--primary-700);
+  color: var(--primary-100);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--secondary-300);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary-400);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--secondary-600);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary-500);
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Utility Classes */
+.text-balance {
+  text-wrap: balance;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bounce-dot {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+.animate-bounce-dot {
+  animation: bounce-dot 1.4s infinite ease-in-out both;
+}
+
+/* Glow Effects */
+.glow-primary {
+  box-shadow: var(--shadow-glow-primary);
+}
+
+.glow-voice {
+  box-shadow: var(--shadow-glow-voice);
+}
