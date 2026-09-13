@@ -84,6 +84,26 @@ describe("ShortTermMemory", () => {
       expect(smallMemory.size).toBe(3);
     });
 
+    it("should rehydrate string timestamps from persist before trim", () => {
+      const smallMemory = new ShortTermMemory({ maxEntries: 3 });
+
+      for (let i = 0; i < 5; i++) {
+        smallMemory.add({
+          id: `msg-${i}`,
+          role: "user",
+          content: `Message ${i}`,
+          // Simulate Zustand JSON rehydrate
+          timestamp: new Date(Date.now() + i * 1000).toISOString() as unknown as Date,
+        });
+      }
+
+      expect(smallMemory.size).toBe(3);
+      for (const entry of smallMemory.getAll()) {
+        expect(entry.timestamp).toBeInstanceOf(Date);
+        expect(Number.isNaN(entry.timestamp.getTime())).toBe(false);
+      }
+    });
+
     it("should keep important entries when trimming", () => {
       const smallMemory = new ShortTermMemory({ maxEntries: 3 });
 

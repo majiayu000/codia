@@ -686,4 +686,18 @@ describe("getEmotionAnalyzer", () => {
       })
     );
   });
+
+  it("should keep Ollama emotion analysis local without calling remote API", async () => {
+    const analyzer = getEmotionAnalyzer({ provider: "ollama" });
+    const result = await analyzer.analyze({
+      id: "msg-ollama",
+      role: "user",
+      content: "I feel happy today!",
+      timestamp: new Date(),
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.primary).toBe("happy");
+    expect(result.reasoning).toBe("Quick pattern-based detection");
+  });
 });

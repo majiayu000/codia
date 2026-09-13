@@ -131,6 +131,17 @@ export class EmotionAnalyzer {
       }
     }
 
+    // Ollama has no remote emotion route that stays local — use quick detection
+    // so user text is never forwarded to OpenAI/Anthropic.
+    if (this.config.provider === "ollama") {
+      const localResult = this.quickDetect(message.content);
+      if (this.config.enableCache) {
+        this.cache.set(message.id, { result: localResult, timestamp: Date.now() });
+      }
+      this.addToHistory(localResult);
+      return localResult;
+    }
+
     // Try LLM analysis
     try {
       const result = await this.callEmotionAPI(message.content);
@@ -170,6 +181,13 @@ export class EmotionAnalyzer {
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUserMessage) {
       return this.createNeutralResult();
+    }
+
+    // Keep Ollama local — never forward conversation text to remote emotion APIs.
+    if (this.config.provider === "ollama") {
+      const localResult = this.quickDetect(lastUserMessage.content);
+      this.addToHistory(localResult);
+      return localResult;
     }
 
     try {

@@ -27,11 +27,17 @@ export class ShortTermMemory {
    * Add a message to short-term memory
    */
   add(message: Message, importance: number = 0.5): void {
+    // Zustand JSON persist rehydrates Dates as strings; normalize before trim().
+    const timestamp =
+      message.timestamp instanceof Date
+        ? message.timestamp
+        : new Date(message.timestamp as string | number);
+
     const entry: ShortTermMemoryEntry = {
       id: message.id,
       content: message.content,
       role: message.role as "user" | "assistant",
-      timestamp: message.timestamp,
+      timestamp: Number.isNaN(timestamp.getTime()) ? new Date() : timestamp,
       importance,
       emotionalContext: message.emotion,
     };

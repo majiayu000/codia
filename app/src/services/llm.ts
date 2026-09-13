@@ -41,6 +41,9 @@ const DEFAULT_CONFIG: LLMConfig = {
   maxTokens: 1024,
 };
 
+/** Serialize background memory extraction so the next lookup sees saved facts. */
+let pendingMemoryExtraction: Promise<void> = Promise.resolve();
+
 function formatMessagesForOpenAI(
   messages: Message[],
   systemPrompt: string
@@ -308,6 +311,9 @@ export async function* streamChatWithMemory(
   // Inject memory context if enabled
   if (enableMemory) {
     try {
+      // Wait for any in-flight extraction from the previous turn before lookup.
+      await pendingMemoryExtraction;
+
       const longTermMemory = getLongTermMemory();
       const query = lastUserMessage?.content;
 
@@ -341,9 +347,13 @@ export async function* streamChatWithMemory(
     if (result.done) {
       const response = result.value;
 
-      // Extract memories from this conversation if enabled
+      // Extract memories from this conversation if enabled (serialized for next turn)
       if (enableMemory && extractMemoryAfterResponse) {
-        extractMemoriesInBackground(messages, response.content, auxiliaryProvider);
+        pendingMemoryExtraction = extractMemoriesInBackground(
+          messages,
+          response.content,
+          auxiliaryProvider
+        );
       }
 
       return {

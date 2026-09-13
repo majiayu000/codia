@@ -47,14 +47,34 @@ Return a JSON object with:
 
 Always respond with valid JSON only, no additional text.`;
 
+const DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, messages, provider = "openai", withContext = false } = body;
+    const {
+      text,
+      messages,
+      provider = "openai",
+      model,
+      withContext = false,
+    } = body;
 
     if (!text && (!messages || messages.length === 0)) {
       return NextResponse.json(
         { error: "Text or messages are required" },
+        { status: 400 }
+      );
+    }
+
+    // Ollama users must stay local — never forward their text to OpenAI/Anthropic.
+    if (provider === "ollama") {
+      return NextResponse.json(
+        {
+          error:
+            "Remote emotion analysis is not supported for Ollama; use local quick detection",
+        },
         { status: 400 }
       );
     }
@@ -82,9 +102,13 @@ export async function POST(request: NextRequest) {
       }
 
       const anthropic = new Anthropic({ apiKey });
+      const anthropicModel =
+        typeof model === "string" && model.length > 0
+          ? model
+          : DEFAULT_ANTHROPIC_MODEL;
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: anthropicModel,
         max_tokens: 1024,
         system: systemPrompt,
         messages: [
@@ -97,7 +121,7 @@ export async function POST(request: NextRequest) {
 
       result =
         response.content[0].type === "text" ? response.content[0].text : "";
-    } else {
+    } else if (provider === "openai") {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
         return NextResponse.json(
@@ -107,9 +131,13 @@ export async function POST(request: NextRequest) {
       }
 
       const openai = new OpenAI({ apiKey });
+      const openaiModel =
+        typeof model === "string" && model.length > 0
+          ? model
+          : DEFAULT_OPENAI_MODEL;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: openaiModel,
         messages: [
           {
             role: "system",
@@ -126,6 +154,11 @@ export async function POST(request: NextRequest) {
       });
 
       result = response.choices[0]?.message?.content || "{}";
+    } else {
+      return NextResponse.json(
+        { error: `Unsupported emotion analysis provider: ${provider}` },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ result });
