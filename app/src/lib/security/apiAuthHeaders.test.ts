@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   apiFetch,
   ensureApiSession,
+  ensureSessionLockListener,
   getApiUnlockSecret,
   lockApiSession,
   resetApiSessionCache,
@@ -143,5 +144,45 @@ describe("apiAuthHeaders session bootstrap", () => {
       method: "DELETE",
       credentials: "include",
     });
+  });
+
+  it("propagates Lock across tabs so apiFetch cannot remint after shared lock", async () => {
+    ensureSessionLockListener();
+
+    const peerSeen: Array<{ type: string }> = [];
+    const peer = new BroadcastChannel("codia-api-session");
+    peer.addEventListener("message", (event: MessageEvent<{ type: string }>) => {
+      peerSeen.push(event.data);
+    });
+
+    setApiUnlockSecret("memory-only-secret");
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    await lockApiSession();
+    await vi.waitFor(() => {
+      expect(peerSeen).toContainEqual({ type: "lock" });
+    });
+    peer.close();
+
+    // Simulate another tab that still held the secret until the Lock broadcast arrived.
+    setApiUnlockSecret("memory-only-secret");
+    expect(getApiUnlockSecret()).toBe("memory-only-secret");
+    const otherTab = new BroadcastChannel("codia-api-session");
+    otherTab.postMessage({ type: "lock" });
+    otherTab.close();
+    await vi.waitFor(() => {
+      expect(getApiUnlockSecret()).toBeNull();
+    });
+
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    await expect(
+      apiFetch("/api/chat/openai", { method: "POST", body: "{}" })
+    ).rejects.toThrow(/unlock with CODIA_API_SECRET/i);
+    expect(
+      mockFetch.mock.calls.filter(
+        (call) =>
+          call[0] === "/api/auth/session" &&
+          (call[1] as { method?: string } | undefined)?.method === "POST"
+      )
+    ).toHaveLength(0);
   });
 });

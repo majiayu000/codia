@@ -214,8 +214,9 @@ async function hasValidSession(
  * Fail-closed when CODIA_API_SECRET is unset.
  * Accepts Authorization: Bearer <CODIA_API_SECRET> or a valid httpOnly session cookie.
  *
- * Auth failures use a separate rate-limit bucket (`api:authfail:<ip>`) so probing
- * is throttled without exhausting the authenticated caller quota (`api:<ip>`).
+ * Auth failures use `api:authfail:<ip>`; skipAuth unlock (POST /api/auth/session)
+ * uses `api:preauth:<ip>`. Neither bucket shares quota with authenticated callers
+ * (`api:<ip>`), so unlock spam cannot 429 legitimate provider POSTs.
  */
 export async function guardApiRequest(
   request: NextRequest,
@@ -268,7 +269,10 @@ export async function guardApiRequest(
   }
 
   if (!options.skipRateLimit) {
-    const { allowed, retryAfterSec } = checkRateLimit(`api:${ip}`, {
+    // skipAuth unlocks charge a pre-auth bucket so invalid unlock spam cannot
+    // exhaust the authenticated provider quota shared under api:direct.
+    const bucketKey = options.skipAuth ? `api:preauth:${ip}` : `api:${ip}`;
+    const { allowed, retryAfterSec } = checkRateLimit(bucketKey, {
       now: options.now,
     });
     if (!allowed) {

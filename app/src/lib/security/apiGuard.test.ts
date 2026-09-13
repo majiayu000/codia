@@ -400,6 +400,50 @@ describe("apiGuard", () => {
       );
       expect(ok).toBeNull();
     });
+
+    it("skipAuth unlock spam does not exhaust the authenticated provider quota", async () => {
+      // Default CODIA_TRUST_PROXY unset → shared api:direct / api:preauth:direct buckets.
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        expect(
+          await guardApiRequest(
+            makeRequest({
+              authorization: null,
+              contentLength: "2",
+              path: "/api/auth/session",
+            }),
+            { skipAuth: true }
+          )
+        ).toBeNull();
+      }
+      const unlockBlocked = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "2",
+          path: "/api/auth/session",
+        }),
+        { skipAuth: true }
+      );
+      expect(unlockBlocked?.status).toBe(429);
+
+      // Authenticated provider POSTs still have a full separate quota.
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        expect(
+          await guardApiRequest(
+            makeRequest({
+              authorization: "Bearer test-secret-value",
+              contentLength: "10",
+            })
+          )
+        ).toBeNull();
+      }
+      const authBlocked = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: "10",
+        })
+      );
+      expect(authBlocked?.status).toBe(429);
+    });
   });
 
   describe("checkRateLimit", () => {
