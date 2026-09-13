@@ -140,8 +140,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </label>
                   <p className="mt-1 text-xs text-[var(--text-tertiary)]">
                     Enter the same server-only <code>CODIA_API_SECRET</code> once
-                    to mint an httpOnly session cookie. It is not embedded in the
-                    client bundle.
+                    to mint an httpOnly session cookie. The secret is kept in
+                    memory only for this tab (never sessionStorage) and is not
+                    embedded in the client bundle.
                   </p>
                   <Input
                     type="password"

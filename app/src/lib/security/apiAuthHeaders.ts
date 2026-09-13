@@ -5,49 +5,24 @@
  * Browser clients authenticate via an httpOnly session cookie minted by
  * `POST /api/auth/session` after proving CODIA_API_SECRET (unlock). Never
  * embed the API bearer in NEXT_PUBLIC_* — that would publish it to every visitor.
+ * Never persist the unlock secret in sessionStorage/localStorage; keep it only
+ * in memory for the current page so XSS cannot exfiltrate it after reload and
+ * renewal requires a fresh unlock when the cookie expires without an in-memory
+ * secret.
  */
 
-const UNLOCK_STORAGE_KEY = "codia_api_unlock_secret";
-
 let sessionReady: Promise<void> | null = null;
+/** In-memory only — never written to Web Storage. */
 let unlockSecret: string | null = null;
-
-function readStoredUnlockSecret(): string | null {
-  if (typeof sessionStorage === "undefined") {
-    return null;
-  }
-  try {
-    const value = sessionStorage.getItem(UNLOCK_STORAGE_KEY);
-    return value?.trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredUnlockSecret(secret: string | null): void {
-  if (typeof sessionStorage === "undefined") {
-    return;
-  }
-  try {
-    if (!secret) {
-      sessionStorage.removeItem(UNLOCK_STORAGE_KEY);
-    } else {
-      sessionStorage.setItem(UNLOCK_STORAGE_KEY, secret);
-    }
-  } catch {
-    // ignore quota / private-mode failures
-  }
-}
 
 /** Provide CODIA_API_SECRET once so the client can mint an httpOnly session. */
 export function setApiUnlockSecret(secret: string | null): void {
   unlockSecret = secret?.trim() || null;
-  writeStoredUnlockSecret(unlockSecret);
   sessionReady = null;
 }
 
 export function getApiUnlockSecret(): string | null {
-  return unlockSecret || readStoredUnlockSecret();
+  return unlockSecret;
 }
 
 async function bootstrapSession(): Promise<void> {
@@ -94,7 +69,8 @@ export async function ensureApiSession(): Promise<void> {
 /**
  * Mint a session immediately with the shared secret (operator unlock).
  * Always POSTs so a typo cannot succeed via an existing cookie GET.
- * Persists the secret in sessionStorage only after the server accepts it.
+ * Keeps the secret in memory only (never sessionStorage) after the server
+ * accepts it, so the httpOnly cookie remains the durable client credential.
  */
 export async function unlockApiSession(secret: string): Promise<void> {
   const trimmed = secret.trim();
@@ -116,7 +92,6 @@ export async function unlockApiSession(secret: string): Promise<void> {
   }
 
   unlockSecret = trimmed;
-  writeStoredUnlockSecret(trimmed);
   sessionReady = Promise.resolve();
 }
 

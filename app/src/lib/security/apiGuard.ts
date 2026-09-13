@@ -213,6 +213,9 @@ async function hasValidSession(
  * Shared-secret / session + body-size + rate-limit guard for /api/** POST handlers.
  * Fail-closed when CODIA_API_SECRET is unset.
  * Accepts Authorization: Bearer <CODIA_API_SECRET> or a valid httpOnly session cookie.
+ *
+ * Auth failures use a separate rate-limit bucket (`api:authfail:<ip>`) so probing
+ * is throttled without exhausting the authenticated caller quota (`api:<ip>`).
  */
 export async function guardApiRequest(
   request: NextRequest,
@@ -226,9 +229,19 @@ export async function guardApiRequest(
     return bodyBlocked;
   }
 
+  const ip = getClientIp(request, env);
+
   if (!options.skipAuth) {
     const configured = getConfiguredApiSecret(env);
     if (!configured) {
+      if (!options.skipRateLimit) {
+        const { allowed, retryAfterSec } = checkRateLimit(`api:authfail:${ip}`, {
+          now: options.now,
+        });
+        if (!allowed) {
+          return tooManyRequests(retryAfterSec);
+        }
+      }
       return unauthorized("API access not configured");
     }
 
@@ -241,12 +254,20 @@ export async function guardApiRequest(
       : await hasValidSession(request, configured, now);
 
     if (!bearerOk && !sessionOk) {
+      // Throttle credential probing before returning 401.
+      if (!options.skipRateLimit) {
+        const { allowed, retryAfterSec } = checkRateLimit(`api:authfail:${ip}`, {
+          now: options.now,
+        });
+        if (!allowed) {
+          return tooManyRequests(retryAfterSec);
+        }
+      }
       return unauthorized("Unauthorized");
     }
   }
 
   if (!options.skipRateLimit) {
-    const ip = getClientIp(request, env);
     const { allowed, retryAfterSec } = checkRateLimit(`api:${ip}`, {
       now: options.now,
     });

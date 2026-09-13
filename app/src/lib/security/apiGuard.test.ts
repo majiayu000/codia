@@ -217,6 +217,56 @@ describe("apiGuard", () => {
       expect(await res?.json()).toEqual({ error: "Unauthorized" });
     });
 
+    it("rate-limits auth failures before exhausting authenticated quota", async () => {
+      const env = {
+        CODIA_API_SECRET: "test-secret-value",
+        CODIA_TRUST_PROXY: "true",
+      };
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        const res = await guardApiRequest(
+          makeRequest({
+            authorization: "Bearer wrong-secret",
+            contentLength: "10",
+            ip: "203.0.113.50",
+          }),
+          { env }
+        );
+        expect(res?.status).toBe(401);
+      }
+      const throttled = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "10",
+          ip: "203.0.113.50",
+        }),
+        { env }
+      );
+      expect(throttled?.status).toBe(429);
+
+      // Authenticated callers still have a full separate quota.
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        expect(
+          await guardApiRequest(
+            makeRequest({
+              authorization: "Bearer test-secret-value",
+              contentLength: "10",
+              ip: "203.0.113.50",
+            }),
+            { env }
+          )
+        ).toBeNull();
+      }
+      const authBlocked = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: "10",
+          ip: "203.0.113.50",
+        }),
+        { env }
+      );
+      expect(authBlocked?.status).toBe(429);
+    });
+
     it("passes when token matches CODIA_API_SECRET", async () => {
       const res = await guardApiRequest(
         makeRequest({

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   apiFetch,
   ensureApiSession,
+  getApiUnlockSecret,
   resetApiSessionCache,
   setApiUnlockSecret,
   unlockApiSession,
@@ -9,12 +10,21 @@ import {
 
 describe("apiAuthHeaders session bootstrap", () => {
   const mockFetch = vi.fn();
+  const sessionStorageMock = {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  };
 
   beforeEach(() => {
     resetApiSessionCache();
     setApiUnlockSecret(null);
     vi.stubGlobal("fetch", mockFetch);
+    vi.stubGlobal("sessionStorage", sessionStorageMock);
     mockFetch.mockReset();
+    sessionStorageMock.getItem.mockReset();
+    sessionStorageMock.setItem.mockReset();
+    sessionStorageMock.removeItem.mockReset();
   });
 
   afterEach(() => {
@@ -76,7 +86,7 @@ describe("apiAuthHeaders session bootstrap", () => {
     expect(mockFetch.mock.calls[4][0]).toBe("/api/chat/openai");
   });
 
-  it("unlockApiSession always POSTs and stores secret only after success", async () => {
+  it("unlockApiSession always POSTs and keeps secret in memory only after success", async () => {
     mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
     await unlockApiSession("test-secret-value");
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -87,14 +97,19 @@ describe("apiAuthHeaders session bootstrap", () => {
         Authorization: "Bearer test-secret-value",
       }),
     });
+    expect(getApiUnlockSecret()).toBe("test-secret-value");
+    expect(sessionStorageMock.setItem).not.toHaveBeenCalled();
+    expect(sessionStorageMock.getItem).not.toHaveBeenCalled();
   });
 
-  it("unlockApiSession does not store secret when POST fails", async () => {
+  it("unlockApiSession does not keep secret in memory when POST fails", async () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(unlockApiSession("wrong-secret")).rejects.toThrow(
       /API session unlock failed: 401/
     );
-    // Subsequent ensureApiSession should not find a stored unlock secret.
+    expect(getApiUnlockSecret()).toBeNull();
+    expect(sessionStorageMock.setItem).not.toHaveBeenCalled();
+    // Subsequent ensureApiSession should not find an unlock secret.
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(ensureApiSession()).rejects.toThrow(/unlock with CODIA_API_SECRET/i);
   });
@@ -105,5 +120,14 @@ describe("apiAuthHeaders session bootstrap", () => {
     await unlockApiSession("fresh-secret");
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("setApiUnlockSecret never writes to sessionStorage", () => {
+    setApiUnlockSecret("memory-only-secret");
+    expect(getApiUnlockSecret()).toBe("memory-only-secret");
+    expect(sessionStorageMock.setItem).not.toHaveBeenCalled();
+    setApiUnlockSecret(null);
+    expect(getApiUnlockSecret()).toBeNull();
+    expect(sessionStorageMock.removeItem).not.toHaveBeenCalled();
   });
 });
