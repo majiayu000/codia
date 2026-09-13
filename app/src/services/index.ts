@@ -50,6 +50,7 @@ export {
   streamChatWithMemory,
   getMemoryContext,
   formatMemoryContextForDebug,
+  supportsRemoteMemoryExtraction,
   type LLMConfig,
   type LLMResponse,
   type StreamCallbacks,

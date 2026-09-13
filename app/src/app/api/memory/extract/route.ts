@@ -18,6 +18,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Ollama users must stay local — never forward their chat content to OpenAI/Anthropic.
+    if (provider === "ollama") {
+      return NextResponse.json(
+        {
+          error:
+            "Remote memory extraction is not supported for Ollama; keep local chat content local",
+        },
+        { status: 400 }
+      );
+    }
+
     let result: string;
 
     if (provider === "anthropic") {

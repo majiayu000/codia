@@ -371,6 +371,16 @@ export async function* streamChatWithMemory(
 }
 
 /**
+ * Remote memory extraction only exists for cloud providers.
+ * Ollama must stay local — never remap local chat content to OpenAI.
+ */
+export function supportsRemoteMemoryExtraction(
+  provider: LLMConfig["provider"] | undefined
+): boolean {
+  return provider === "openai" || provider === "anthropic";
+}
+
+/**
  * Extract memories in background (non-blocking)
  */
 async function extractMemoriesInBackground(
@@ -379,8 +389,12 @@ async function extractMemoriesInBackground(
   providerConfig?: Pick<LLMConfig, "provider" | "model">
 ): Promise<void> {
   try {
+    // Keep Ollama local — never forward conversation text to remote memory APIs.
+    if (!supportsRemoteMemoryExtraction(providerConfig?.provider)) {
+      return;
+    }
+
     const longTermMemory = getLongTermMemory();
-    // Memory extractor supports openai | anthropic; map other providers to openai
     const memoryProvider =
       providerConfig?.provider === "anthropic" ? "anthropic" : "openai";
     const extractor = createMemoryExtractor(longTermMemory, {
