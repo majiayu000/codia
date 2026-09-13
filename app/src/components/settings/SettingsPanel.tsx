@@ -12,10 +12,43 @@ interface SettingsPanelProps {
 
 type SettingsTab = "llm" | "voice" | "appearance" | "data";
 
+const DEFAULT_MODEL_BY_PROVIDER: Record<
+  "openai" | "anthropic" | "ollama",
+  string
+> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-3-haiku-20240307",
+  ollama: "llama3.2",
+};
+
+const MODELS_BY_PROVIDER: Record<"openai" | "anthropic" | "ollama", string[]> =
+  {
+    openai: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+    anthropic: [
+      "claude-3-haiku-20240307",
+      "claude-3-5-sonnet-20241022",
+      "claude-3-opus-20240229",
+    ],
+    ollama: ["llama3.2", "mistral", "gemma2"],
+  };
+
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("llm");
   const settings = useSettingsStore();
   const character = useCharacterStore();
+
+  const handleProviderChange = (
+    provider: "openai" | "anthropic" | "ollama"
+  ) => {
+    const allowed = MODELS_BY_PROVIDER[provider];
+    const nextModel = allowed.includes(settings.llmModel)
+      ? settings.llmModel
+      : DEFAULT_MODEL_BY_PROVIDER[provider];
+    settings.updateSettings({
+      llmProvider: provider,
+      llmModel: nextModel,
+    });
+  };
 
   const tabs = [
     { id: "llm" as const, label: "AI Model", icon: Bot },
@@ -67,9 +100,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   <select
                     value={settings.llmProvider}
                     onChange={(e) =>
-                      settings.updateSettings({
-                        llmProvider: e.target.value as "openai" | "anthropic" | "ollama",
-                      })
+                      handleProviderChange(
+                        e.target.value as "openai" | "anthropic" | "ollama"
+                      )
                     }
                     className="mt-1 w-full rounded-[var(--radius-default)] border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 text-sm"
                   >
@@ -113,6 +146,17 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     )}
                   </select>
                 </div>
+
+                {settings.llmProvider === "ollama" && (
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Ollama (Local) requires a self-hosted or local Next.js
+                    deployment that can reach the Ollama daemon (default{" "}
+                    <code>http://localhost:11434</code>). Configure{" "}
+                    <code>OLLAMA_BASE_URL</code> on the server if needed; hosted
+                    serverless deployments cannot reach your machine&apos;s
+                    Ollama.
+                  </p>
+                )}
               </div>
             </div>
           )}

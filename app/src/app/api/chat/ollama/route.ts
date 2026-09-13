@@ -4,16 +4,24 @@ export const runtime = "nodejs";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
 
+/**
+ * Resolve Ollama base URL from server config only.
+ * Client-supplied URLs are ignored to prevent SSRF.
+ */
+function resolveOllamaBaseUrl(): string {
+  return (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE_URL).replace(
+    /\/$/,
+    ""
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { messages, model, temperature, max_tokens, stream, baseUrl } =
+    // Intentionally ignore any client-supplied baseUrl (SSRF guard).
+    const { messages, model, temperature, max_tokens, stream } =
       await request.json();
 
-    const ollamaBaseUrl = (
-      baseUrl ||
-      process.env.OLLAMA_BASE_URL ||
-      DEFAULT_OLLAMA_BASE_URL
-    ).replace(/\/$/, "");
+    const ollamaBaseUrl = resolveOllamaBaseUrl();
 
     const ollamaPayload = {
       model: model || "llama3.2",
@@ -29,6 +37,7 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ollamaPayload),
+      signal: request.signal,
     });
 
     if (!ollamaResponse.ok) {
@@ -61,6 +70,11 @@ export async function POST(request: NextRequest) {
 
           try {
             while (true) {
+              if (request.signal.aborted) {
+                await reader.cancel();
+                break;
+              }
+
               const { done, value } = await reader.read();
               if (done) break;
 
@@ -127,7 +141,25 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
             controller.close();
           } catch (error) {
+            if (
+              error instanceof Error &&
+              (error.name === "AbortError" || request.signal.aborted)
+            ) {
+              try {
+                controller.close();
+              } catch {
+                // Stream may already be closed
+              }
+              return;
+            }
             controller.error(error);
+          }
+        },
+        async cancel() {
+          try {
+            await reader.cancel();
+          } catch {
+            // Reader may already be closed
           }
         },
       });
@@ -144,6 +176,9 @@ export async function POST(request: NextRequest) {
     const result = await ollamaResponse.json();
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error("Ollama API error:", error);
     return NextResponse.json(
       {

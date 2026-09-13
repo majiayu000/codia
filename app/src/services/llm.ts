@@ -69,6 +69,24 @@ function formatMessagesForAnthropic(
   };
 }
 
+/**
+ * Parse SSE `data:` records across chunk boundaries.
+ * Incomplete trailing fragments are retained in `pending` until the next read.
+ */
+function consumeSseDataLines(
+  chunk: string,
+  pending: { value: string }
+): string[] {
+  const combined = pending.value + chunk;
+  const parts = combined.split("\n");
+  pending.value = parts.pop() ?? "";
+
+  return parts
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice(6));
+}
+
 export async function* streamChat(
   messages: Message[],
   systemPrompt: string,
@@ -178,6 +196,7 @@ export async function* streamChat(
       }
     }
   } else if (mergedConfig.provider === "ollama") {
+    // baseUrl is server-configured only (OLLAMA_BASE_URL); never send from client.
     const response = await fetch("/api/chat/ollama", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -186,7 +205,6 @@ export async function* streamChat(
         model: mergedConfig.model,
         temperature: mergedConfig.temperature,
         max_tokens: mergedConfig.maxTokens,
-        baseUrl: mergedConfig.baseUrl,
         stream: true,
       }),
     });
@@ -211,15 +229,16 @@ export async function* streamChat(
       throw new Error("No response body");
     }
 
+    const pending = { value: "" };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
+      const chunk = decoder.decode(value, { stream: true });
+      const records = consumeSseDataLines(chunk, pending);
 
-      for (const line of lines) {
-        const data = line.slice(6);
+      for (const data of records) {
         if (data === "[DONE]") continue;
 
         try {
@@ -236,6 +255,26 @@ export async function* streamChat(
           // Ignore incomplete chunk parse failures; rethrow API errors
           if (error instanceof SyntaxError) continue;
           throw error;
+        }
+      }
+    }
+
+    // Flush any final complete SSE record left after the last chunk.
+    if (pending.value.trim().startsWith("data: ")) {
+      const data = pending.value.trim().slice(6);
+      if (data && data !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) {
+            throw new Error(String(parsed.error));
+          }
+          const token = parsed.choices?.[0]?.delta?.content || "";
+          if (token) {
+            fullContent += token;
+            yield token;
+          }
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
         }
       }
     }
