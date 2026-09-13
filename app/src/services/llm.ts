@@ -210,8 +210,11 @@ export async function chat(
  * Quick synchronous emotion detection (for backwards compatibility)
  * Uses the EmotionAnalyzer's quickDetect method
  */
-function detectEmotion(text: string): BasicExpression {
-  const analyzer = getEmotionAnalyzer();
+function detectEmotion(
+  text: string,
+  providerConfig?: Pick<LLMConfig, "provider" | "model">
+): BasicExpression {
+  const analyzer = getEmotionAnalyzer(providerConfig);
   const result = analyzer.quickDetect(text);
   return mapToBasicExpression(result.primary);
 }
@@ -219,8 +222,11 @@ function detectEmotion(text: string): BasicExpression {
 /**
  * Analyze emotion from user message (async, more accurate)
  */
-async function analyzeUserEmotion(message: Message): Promise<EmotionAnalysisResult> {
-  const analyzer = getEmotionAnalyzer();
+async function analyzeUserEmotion(
+  message: Message,
+  providerConfig?: Pick<LLMConfig, "provider" | "model">
+): Promise<EmotionAnalysisResult> {
+  const analyzer = getEmotionAnalyzer(providerConfig);
   return analyzer.analyze(message);
 }
 
@@ -273,11 +279,17 @@ export async function* streamChatWithMemory(
   // Get the last user message for analysis
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
 
+  // Honor selected LLM provider for auxiliary emotion/memory services
+  const auxiliaryProvider = {
+    provider: llmConfig.provider ?? DEFAULT_CONFIG.provider,
+    model: llmConfig.model,
+  };
+
   // Analyze user emotion if enabled
   if (enableEmotionAnalysis && lastUserMessage) {
     try {
-      emotionAnalysis = await analyzeUserEmotion(lastUserMessage);
-      emotionContext = getEmotionAnalyzer().getEmotionContext();
+      emotionAnalysis = await analyzeUserEmotion(lastUserMessage, auxiliaryProvider);
+      emotionContext = getEmotionAnalyzer(auxiliaryProvider).getEmotionContext();
 
       // Generate response strategy
       if (applyResponseStrategy) {
@@ -331,7 +343,7 @@ export async function* streamChatWithMemory(
 
       // Extract memories from this conversation if enabled
       if (enableMemory && extractMemoryAfterResponse) {
-        extractMemoriesInBackground(messages, response.content);
+        extractMemoriesInBackground(messages, response.content, auxiliaryProvider);
       }
 
       return {
@@ -353,11 +365,17 @@ export async function* streamChatWithMemory(
  */
 async function extractMemoriesInBackground(
   messages: Message[],
-  aiResponse: string
+  aiResponse: string,
+  providerConfig?: Pick<LLMConfig, "provider" | "model">
 ): Promise<void> {
   try {
     const longTermMemory = getLongTermMemory();
-    const extractor = createMemoryExtractor(longTermMemory);
+    // Memory extractor supports openai | anthropic; map other providers to openai
+    const memoryProvider =
+      providerConfig?.provider === "anthropic" ? "anthropic" : "openai";
+    const extractor = createMemoryExtractor(longTermMemory, {
+      provider: memoryProvider,
+    });
 
     // Add the AI response to messages for extraction
     const allMessages: Message[] = [

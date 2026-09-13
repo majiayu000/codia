@@ -58,6 +58,13 @@ export class EmotionAnalyzer {
   }
 
   /**
+   * Update analyzer configuration (e.g. selected LLM provider)
+   */
+  configure(config: Partial<EmotionAnalyzerConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+
+  /**
    * Quick detection using keyword patterns
    * 使用关键词模式快速检测
    */
@@ -403,9 +410,13 @@ export function createEmotionAnalyzer(
 // Singleton instance
 let defaultInstance: EmotionAnalyzer | null = null;
 
-export function getEmotionAnalyzer(): EmotionAnalyzer {
+export function getEmotionAnalyzer(
+  config?: Partial<EmotionAnalyzerConfig>
+): EmotionAnalyzer {
   if (!defaultInstance) {
-    defaultInstance = new EmotionAnalyzer();
+    defaultInstance = new EmotionAnalyzer(config);
+  } else if (config) {
+    defaultInstance.configure(config);
   }
   return defaultInstance;
 }

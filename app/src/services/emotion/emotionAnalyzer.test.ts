@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   EmotionAnalyzer,
   createEmotionAnalyzer,
+  getEmotionAnalyzer,
+  resetEmotionAnalyzer,
   mapToBasicExpression,
 } from "./emotionAnalyzer";
 import type { EmotionAnalysisResult, ExtendedExpression } from "./types";
@@ -640,5 +642,48 @@ describe("createEmotionAnalyzer", () => {
       minConfidence: 0.7,
     });
     expect(a).toBeInstanceOf(EmotionAnalyzer);
+  });
+});
+
+describe("getEmotionAnalyzer", () => {
+  beforeEach(() => {
+    resetEmotionAnalyzer();
+    vi.clearAllMocks();
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    resetEmotionAnalyzer();
+  });
+
+  it("should apply provider config to the singleton", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: JSON.stringify({
+          primary: "happy",
+          intensity: 0.8,
+          valence: 0.7,
+          arousal: 0.6,
+          confidence: 0.9,
+          cues: ["great"],
+        }),
+      }),
+    });
+
+    const analyzer = getEmotionAnalyzer({ provider: "anthropic" });
+    await analyzer.analyze({
+      id: "msg-1",
+      role: "user",
+      content: "I feel great!",
+      timestamp: new Date(),
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/emotion/analyze",
+      expect.objectContaining({
+        body: expect.stringContaining('"provider":"anthropic"'),
+      })
+    );
   });
 });
