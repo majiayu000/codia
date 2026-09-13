@@ -11,7 +11,10 @@ export async function POST(request: NextRequest) {
       speed = 1.0,
     } = await request.json();
     // Prefer voiceId (client / TTSConfig) with voice as a compatibility fallback.
-    const resolvedVoice = voiceId ?? voice ?? "af_bella";
+    // Client stores use placeholder "default"; map it to Kokoro's real default voice.
+    const requestedVoice =
+      voiceId === "default" || voiceId === "" ? undefined : voiceId;
+    const resolvedVoice = requestedVoice ?? voice ?? "af_bella";
 
     if (!text) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
