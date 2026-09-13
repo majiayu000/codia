@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, Bot, Volume2, Palette, Database } from "lucide-react";
 import { Button, Input, Modal } from "@/components/ui";
+import { unlockApiSession } from "@/lib/security/apiAuthHeaders";
 import { useSettingsStore, useCharacterStore } from "@/store";
 
 interface SettingsPanelProps {
@@ -14,8 +15,27 @@ type SettingsTab = "llm" | "voice" | "appearance" | "data";
 
 export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("llm");
+  const [apiUnlockSecret, setApiUnlockSecret] = useState("");
+  const [apiUnlockStatus, setApiUnlockStatus] = useState<string | null>(null);
+  const [apiUnlockBusy, setApiUnlockBusy] = useState(false);
   const settings = useSettingsStore();
   const character = useCharacterStore();
+
+  async function handleApiUnlock() {
+    setApiUnlockBusy(true);
+    setApiUnlockStatus(null);
+    try {
+      await unlockApiSession(apiUnlockSecret);
+      setApiUnlockStatus("API session unlocked for this browser tab.");
+      setApiUnlockSecret("");
+    } catch (error) {
+      setApiUnlockStatus(
+        error instanceof Error ? error.message : "Failed to unlock API session"
+      );
+    } finally {
+      setApiUnlockBusy(false);
+    }
+  }
 
   const tabs = [
     { id: "llm" as const, label: "AI Model", icon: Bot },
@@ -112,6 +132,38 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                       </>
                     )}
                   </select>
+                </div>
+
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)]">
+                    API access unlock
+                  </label>
+                  <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                    Enter the same server-only <code>CODIA_API_SECRET</code> once
+                    to mint an httpOnly session cookie. It is not embedded in the
+                    client bundle.
+                  </p>
+                  <Input
+                    type="password"
+                    value={apiUnlockSecret}
+                    onChange={(e) => setApiUnlockSecret(e.target.value)}
+                    placeholder="CODIA_API_SECRET"
+                    className="mt-2"
+                    autoComplete="off"
+                  />
+                  <Button
+                    type="button"
+                    className="mt-2"
+                    disabled={apiUnlockBusy || !apiUnlockSecret.trim()}
+                    onClick={() => void handleApiUnlock()}
+                  >
+                    {apiUnlockBusy ? "Unlocking…" : "Unlock API session"}
+                  </Button>
+                  {apiUnlockStatus && (
+                    <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                      {apiUnlockStatus}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

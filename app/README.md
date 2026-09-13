@@ -28,9 +28,11 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 `POST /api/**` routes require either:
 
 - `Authorization: Bearer <CODIA_API_SECRET>` (scripts / external callers), or
-- a valid httpOnly session cookie from `GET /api/auth/session` (same-origin browser clients)
+- a valid httpOnly session cookie minted by `POST /api/auth/session` after proving the same secret (browser unlock in Settings)
 
-Middleware and route handlers also enforce body-size limits (4 MiB default; 32 MiB for `/api/vision/**`) and a basic rate limit (60 req/min). Forwarding headers are trusted for rate-limit keys only when `CODIA_TRUST_PROXY` is enabled. This is a shared-secret / same-origin session gate — not full user/JWT auth.
+`GET /api/auth/session` only reports whether a valid session cookie already exists; it never issues cookies to anonymous callers.
+
+Middleware and route handlers also enforce body-size limits (4 MiB default; 32 MiB for `/api/vision/**`) and a basic rate limit (60 req/min). Forwarding headers are trusted for rate-limit keys when `CODIA_TRUST_PROXY` is enabled or when running on Vercel. This is a shared-secret session gate — not full user/JWT auth.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

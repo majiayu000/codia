@@ -24,7 +24,6 @@ function makeRequest(
     ip?: string;
     cookie?: string;
     path?: string;
-    trustPlatformIp?: string;
   } = {}
 ): NextRequest {
   const headers = new Headers();
@@ -41,17 +40,10 @@ function makeRequest(
     headers.set("cookie", `${API_SESSION_COOKIE}=${options.cookie}`);
   }
   const path = options.path ?? "/api/chat/openai";
-  const req = new NextRequest(`http://localhost:3000${path}`, {
+  return new NextRequest(`http://localhost:3000${path}`, {
     method: "POST",
     headers,
   });
-  if (options.trustPlatformIp) {
-    Object.defineProperty(req, "ip", {
-      value: options.trustPlatformIp,
-      configurable: true,
-    });
-  }
-  return req;
 }
 
 describe("apiGuard", () => {
@@ -147,14 +139,25 @@ describe("apiGuard", () => {
       expect(getClientIp(req, { CODIA_TRUST_PROXY: "true" })).toBe("9.9.9.9");
     });
 
-    it("prefers platform ip when proxy is not trusted", () => {
+    it("trusts Vercel forwarding headers when VERCEL=1", () => {
       const req = makeRequest({
         authorization: "Bearer test-secret-value",
         contentLength: "10",
-        ip: "9.9.9.9",
-        trustPlatformIp: "10.0.0.1",
+        ip: "203.0.113.10",
       });
-      expect(getClientIp(req, {})).toBe("10.0.0.1");
+      expect(getClientIp(req, { VERCEL: "1" })).toBe("203.0.113.10");
+    });
+
+    it("does not use removed NextRequest.ip; falls back to direct", () => {
+      const req = makeRequest({
+        authorization: "Bearer test-secret-value",
+        contentLength: "10",
+      });
+      Object.defineProperty(req, "ip", {
+        value: "10.0.0.1",
+        configurable: true,
+      });
+      expect(getClientIp(req, {})).toBe("direct");
     });
   });
 
@@ -278,8 +281,9 @@ describe("apiGuard", () => {
             makeRequest({
               authorization: auth,
               contentLength: "10",
-              trustPlatformIp: "9.9.9.9",
-            })
+              ip: "9.9.9.9",
+            }),
+            { env: { CODIA_API_SECRET: "test-secret-value", CODIA_TRUST_PROXY: "true" } }
           )
         ).toBeNull();
       }
@@ -287,8 +291,9 @@ describe("apiGuard", () => {
         makeRequest({
           authorization: auth,
           contentLength: "10",
-          trustPlatformIp: "9.9.9.9",
-        })
+          ip: "9.9.9.9",
+        }),
+        { env: { CODIA_API_SECRET: "test-secret-value", CODIA_TRUST_PROXY: "true" } }
       );
       expect(blocked?.status).toBe(429);
       expect(await blocked?.json()).toEqual({ error: "Rate limit exceeded" });
@@ -303,9 +308,12 @@ describe("apiGuard", () => {
             makeRequest({
               authorization: auth,
               contentLength: "10",
-              trustPlatformIp: "8.8.8.8",
+              ip: "8.8.8.8",
             }),
-            { skipRateLimit: true }
+            {
+              skipRateLimit: true,
+              env: { CODIA_API_SECRET: "test-secret-value", CODIA_TRUST_PROXY: "true" },
+            }
           )
         ).toBeNull();
       }

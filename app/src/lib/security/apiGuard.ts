@@ -64,32 +64,39 @@ function trustProxyEnabled(env: NodeJS.ProcessEnv): boolean {
   return value === "1" || value === "true" || value === "yes";
 }
 
+/** Vercel sets forwarding headers at the edge; Next 16 no longer exposes request.ip. */
+function isVercelRuntime(env: NodeJS.ProcessEnv): boolean {
+  return env.VERCEL === "1" || env.VERCEL === "true";
+}
+
+function ipFromForwardingHeaders(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0]?.trim() || "unknown";
+  }
+  return (
+    request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("cf-connecting-ip")?.trim() ||
+    "unknown"
+  );
+}
+
 /**
  * Rate-limit client identity.
- * Forwarding headers are only trusted when CODIA_TRUST_PROXY is enabled;
- * otherwise use platform `request.ip` when present, else a single "direct" bucket
- * (cannot be spoofed into unbounded Map growth).
+ * Forwarding headers are trusted when CODIA_TRUST_PROXY is enabled or when
+ * running on Vercel (platform-injected X-Forwarded-For). Next.js 16 removed
+ * `request.ip`, so self-hosted deployments without a trusted proxy share a
+ * single non-spoofable "direct" bucket instead of trusting client headers.
  */
 export function getClientIp(
   request: NextRequest,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  if (trustProxyEnabled(env)) {
-    const forwarded = request.headers.get("x-forwarded-for");
-    if (forwarded) {
-      return forwarded.split(",")[0]?.trim() || "unknown";
-    }
-    return (
-      request.headers.get("x-real-ip")?.trim() ||
-      request.headers.get("cf-connecting-ip")?.trim() ||
-      "unknown"
-    );
+  if (trustProxyEnabled(env) || isVercelRuntime(env)) {
+    return ipFromForwardingHeaders(request);
   }
 
-  const platformIp = (request as NextRequest & { ip?: string | null }).ip;
-  if (platformIp && platformIp.trim()) {
-    return platformIp.trim();
-  }
   return "direct";
 }
 
@@ -245,4 +252,10 @@ export async function guardApiRequest(
 }
 
 // Re-export client helpers for convenience in server/tests.
-export { apiFetch, ensureApiSession, getApiAuthHeaders } from "./apiAuthHeaders";
+export {
+  apiFetch,
+  ensureApiSession,
+  getApiAuthHeaders,
+  setApiUnlockSecret,
+  unlockApiSession,
+} from "./apiAuthHeaders";
