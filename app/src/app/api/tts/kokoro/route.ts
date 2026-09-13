@@ -4,7 +4,14 @@ export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, voice = "af_bella" } = await request.json();
+    const {
+      text,
+      voiceId,
+      voice,
+      speed = 1.0,
+    } = await request.json();
+    // Prefer voiceId (client / TTSConfig) with voice as a compatibility fallback.
+    const resolvedVoice = voiceId ?? voice ?? "af_bella";
 
     if (!text) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
@@ -19,8 +26,8 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         text,
-        voice,
-        speed: 1.0,
+        voice: resolvedVoice,
+        speed,
       }),
     });
 
