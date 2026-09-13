@@ -85,7 +85,18 @@ export default function Home() {
           }
         );
 
-        for await (const token of generator) {
+        // Manual next() loop so the AsyncGenerator return value (LLMResponse)
+        // is available when done — for-await would discard it.
+        while (true) {
+          const result = await generator.next();
+          if (result.done) {
+            if (result.value?.emotion) {
+              setExpression(result.value.emotion);
+            }
+            break;
+          }
+
+          const token = result.value;
           assistantContent += token;
 
           // Update the last message with accumulated content
@@ -98,12 +109,6 @@ export default function Home() {
               assistantContent
             );
           }
-        }
-
-        // Set expression based on response
-        const result = await generator.next();
-        if (result.done && result.value.emotion) {
-          setExpression(result.value.emotion);
         }
 
         // Trigger speaking animation
