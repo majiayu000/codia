@@ -385,6 +385,7 @@ async function extractMemoriesInBackground(
       providerConfig?.provider === "anthropic" ? "anthropic" : "openai";
     const extractor = createMemoryExtractor(longTermMemory, {
       provider: memoryProvider,
+      ...(providerConfig?.model ? { model: providerConfig.model } : {}),
     });
 
     // Add the AI response to messages for extraction

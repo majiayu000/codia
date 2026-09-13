@@ -14,6 +14,8 @@ import { LongTermMemory } from "./longTermMemory";
 
 export interface MemoryExtractorConfig {
   provider: "openai" | "anthropic";
+  /** Selected chat model; when omitted the extract API uses its provider default. */
+  model?: string;
   minConfidence: number;
   batchSize: number;
 }
@@ -283,6 +285,7 @@ export class MemoryExtractor {
         body: JSON.stringify({
           prompt,
           provider: this.config.provider,
+          ...(this.config.model ? { model: this.config.model } : {}),
         }),
       });
 

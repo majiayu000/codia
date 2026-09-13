@@ -242,6 +242,42 @@ describe("MemoryExtractor", () => {
       );
     });
 
+    it("should forward selected model to extraction API", async () => {
+      const modelAwareExtractor = new MemoryExtractor(mockLongTermMemory as any, {
+        provider: "openai",
+        model: "gpt-4o",
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          result: JSON.stringify({
+            facts: [],
+            preferences: [],
+            events: [],
+            relationships: [],
+            emotions: [],
+            shouldUpdateProfile: false,
+          }),
+        }),
+      });
+
+      await modelAwareExtractor.extractFromConversation([
+        {
+          id: "msg-1",
+          role: "user",
+          content: "我叫李明",
+          timestamp: new Date(),
+        },
+      ]);
+
+      const [, options] = mockFetch.mock.calls[0];
+      const body = JSON.parse(options.body as string);
+      expect(body.provider).toBe("openai");
+      expect(body.model).toBe("gpt-4o");
+      expect(typeof body.prompt).toBe("string");
+    });
+
     it("should parse extraction result correctly", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,

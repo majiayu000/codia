@@ -4,9 +4,12 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "edge";
 
+const DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, provider = "openai" } = await request.json();
+    const { prompt, provider = "openai", model } = await request.json();
 
     if (!prompt) {
       return NextResponse.json(
@@ -27,9 +30,13 @@ export async function POST(request: NextRequest) {
       }
 
       const anthropic = new Anthropic({ apiKey });
+      const anthropicModel =
+        typeof model === "string" && model.length > 0
+          ? model
+          : DEFAULT_ANTHROPIC_MODEL;
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: anthropicModel,
         max_tokens: 2048,
         messages: [
           {
@@ -51,9 +58,13 @@ export async function POST(request: NextRequest) {
       }
 
       const openai = new OpenAI({ apiKey });
+      const openaiModel =
+        typeof model === "string" && model.length > 0
+          ? model
+          : DEFAULT_OPENAI_MODEL;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: openaiModel,
         messages: [
           {
             role: "system",
