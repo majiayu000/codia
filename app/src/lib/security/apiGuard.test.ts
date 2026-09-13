@@ -318,6 +318,38 @@ describe("apiGuard", () => {
         ).toBeNull();
       }
     });
+
+    it("skipAuth still enforces body size without requiring credentials", async () => {
+      const oversized = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: String(5 * 1024 * 1024),
+          path: "/api/auth/session",
+        }),
+        { skipAuth: true }
+      );
+      expect(oversized?.status).toBe(413);
+
+      const missingLength = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: null,
+          path: "/api/auth/session",
+        }),
+        { skipAuth: true }
+      );
+      expect(missingLength?.status).toBe(411);
+
+      const ok = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "2",
+          path: "/api/auth/session",
+        }),
+        { skipAuth: true }
+      );
+      expect(ok).toBeNull();
+    });
   });
 
   describe("checkRateLimit", () => {

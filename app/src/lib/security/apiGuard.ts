@@ -22,6 +22,11 @@ const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 export type ApiGuardOptions = {
   /** When true, skip incrementing the rate-limit bucket (route re-entry after middleware). */
   skipRateLimit?: boolean;
+  /**
+   * When true, enforce body size (+ optional rate limit) without requiring
+   * Bearer/session auth. Used for POST /api/auth/session unlock minting.
+   */
+  skipAuth?: boolean;
   maxBodyBytes?: number;
   now?: number;
   /** Override env for tests (CODIA_API_SECRET / CODIA_TRUST_PROXY). */
@@ -221,21 +226,23 @@ export async function guardApiRequest(
     return bodyBlocked;
   }
 
-  const configured = getConfiguredApiSecret(env);
-  if (!configured) {
-    return unauthorized("API access not configured");
-  }
+  if (!options.skipAuth) {
+    const configured = getConfiguredApiSecret(env);
+    if (!configured) {
+      return unauthorized("API access not configured");
+    }
 
-  const now = options.now ?? Date.now();
-  const token = extractBearerToken(request);
-  const bearerOk =
-    !!token && timingSafeEqualString(token, configured);
-  const sessionOk = bearerOk
-    ? false
-    : await hasValidSession(request, configured, now);
+    const now = options.now ?? Date.now();
+    const token = extractBearerToken(request);
+    const bearerOk =
+      !!token && timingSafeEqualString(token, configured);
+    const sessionOk = bearerOk
+      ? false
+      : await hasValidSession(request, configured, now);
 
-  if (!bearerOk && !sessionOk) {
-    return unauthorized("Unauthorized");
+    if (!bearerOk && !sessionOk) {
+      return unauthorized("Unauthorized");
+    }
   }
 
   if (!options.skipRateLimit) {

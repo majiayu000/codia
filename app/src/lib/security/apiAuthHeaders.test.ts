@@ -76,11 +76,34 @@ describe("apiAuthHeaders session bootstrap", () => {
     expect(mockFetch.mock.calls[4][0]).toBe("/api/chat/openai");
   });
 
-  it("unlockApiSession stores secret and bootstraps", async () => {
-    mockFetch
-      .mockResolvedValueOnce({ ok: false, status: 401 })
-      .mockResolvedValueOnce({ ok: true, status: 200 });
+  it("unlockApiSession always POSTs and stores secret only after success", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
     await unlockApiSession("test-secret-value");
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/auth/session");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({
+        Authorization: "Bearer test-secret-value",
+      }),
+    });
+  });
+
+  it("unlockApiSession does not store secret when POST fails", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    await expect(unlockApiSession("wrong-secret")).rejects.toThrow(
+      /API session unlock failed: 401/
+    );
+    // Subsequent ensureApiSession should not find a stored unlock secret.
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+    await expect(ensureApiSession()).rejects.toThrow(/unlock with CODIA_API_SECRET/i);
+  });
+
+  it("unlockApiSession does not short-circuit on an existing valid cookie", async () => {
+    // Pre-existing cookie would make GET succeed; unlock must still POST.
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    await unlockApiSession("fresh-secret");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: "POST" });
   });
 });

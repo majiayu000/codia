@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  MAX_API_BODY_BYTES,
+  checkBodySize,
   extractBearerToken,
   getConfiguredApiSecret,
   timingSafeEqualString,
@@ -42,6 +44,12 @@ export async function GET(request: NextRequest) {
  * Requires Authorization: Bearer <CODIA_API_SECRET> (or matching JSON body.secret).
  */
 export async function POST(request: NextRequest) {
+  // Defense in depth: reject oversized/chunked bodies even if middleware is bypassed.
+  const bodyBlocked = checkBodySize(request, MAX_API_BODY_BYTES);
+  if (bodyBlocked) {
+    return bodyBlocked;
+  }
+
   const secret = getConfiguredApiSecret();
   if (!secret) {
     return NextResponse.json(

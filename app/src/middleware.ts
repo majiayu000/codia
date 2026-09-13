@@ -3,19 +3,22 @@ import { guardApiRequest, maxBodyBytesForPath } from "@/lib/security/apiGuard";
 
 /**
  * Enforce shared-secret/session auth, body size, and basic rate limits on /api/** POSTs.
- * Skips /api/auth/session — that route authenticates minting with CODIA_API_SECRET itself.
+ * POST /api/auth/session still gets body-size + rate-limit checks, but skips auth
+ * so unlock can mint a session without an existing cookie.
  */
 export async function middleware(request: NextRequest) {
-  if (
-    request.method === "POST" &&
-    !request.nextUrl.pathname.startsWith("/api/auth/session")
-  ) {
-    const blocked = await guardApiRequest(request, {
-      maxBodyBytes: maxBodyBytesForPath(request.nextUrl.pathname),
-    });
-    if (blocked) {
-      return blocked;
-    }
+  if (request.method !== "POST") {
+    return NextResponse.next();
+  }
+
+  const pathname = request.nextUrl.pathname;
+  const isSessionUnlock = pathname.startsWith("/api/auth/session");
+  const blocked = await guardApiRequest(request, {
+    maxBodyBytes: maxBodyBytesForPath(pathname),
+    skipAuth: isSessionUnlock,
+  });
+  if (blocked) {
+    return blocked;
   }
 
   return NextResponse.next();

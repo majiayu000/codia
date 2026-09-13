@@ -93,12 +93,31 @@ export async function ensureApiSession(): Promise<void> {
 
 /**
  * Mint a session immediately with the shared secret (operator unlock).
- * Stores the secret in sessionStorage for TTL/401 refresh retries.
+ * Always POSTs so a typo cannot succeed via an existing cookie GET.
+ * Persists the secret in sessionStorage only after the server accepts it.
  */
 export async function unlockApiSession(secret: string): Promise<void> {
-  setApiUnlockSecret(secret);
-  sessionReady = null;
-  await ensureApiSession();
+  const trimmed = secret.trim();
+  if (!trimmed) {
+    throw new Error("API unlock secret required");
+  }
+
+  const response = await fetch("/api/auth/session", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${trimmed}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`API session unlock failed: ${response.status}`);
+  }
+
+  unlockSecret = trimmed;
+  writeStoredUnlockSecret(trimmed);
+  sessionReady = Promise.resolve();
 }
 
 /** Reset cached session bootstrap (tests). */
