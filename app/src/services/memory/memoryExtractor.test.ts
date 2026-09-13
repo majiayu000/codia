@@ -237,7 +237,9 @@ describe("MemoryExtractor", () => {
         "/api/memory/extract",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+          }),
         })
       );
     });

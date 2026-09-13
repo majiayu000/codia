@@ -160,7 +160,9 @@ describe("EmotionAnalyzer", () => {
         "/api/emotion/analyze",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: expect.objectContaining({
+            "Content-Type": "application/json",
+          }),
         })
       );
     });

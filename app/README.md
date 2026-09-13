@@ -2,7 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+Copy environment defaults and set a shared API secret (required for `/api/**` POST routes):
+
+```bash
+cp .env.example .env.local
+# Set CODIA_API_SECRET and NEXT_PUBLIC_CODIA_API_SECRET to the same value
+```
+
+Then run the development server:
 
 ```bash
 npm run dev
@@ -15,6 +22,10 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+### API access guard
+
+All `POST /api/**` routes require `Authorization: Bearer <CODIA_API_SECRET>`. Middleware and route handlers also enforce a 4 MiB body-size limit and a basic per-IP rate limit (60 req/min). Demo clients read `NEXT_PUBLIC_CODIA_API_SECRET` and send the same Bearer token. This is a shared-secret gate only — not full session/JWT auth.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

@@ -3,6 +3,7 @@
  * 视觉服务 - 使用 LLM 进行图像分析
  */
 
+import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
 import type {
   ImageAnalysisResult,
   DetectedObject,
@@ -162,7 +163,7 @@ Return the response as JSON with this structure:
 
     const response = await fetch("/api/vision/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         imageData,
         imageUrl,

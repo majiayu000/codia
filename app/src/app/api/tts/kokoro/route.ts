@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardApiRequest } from "@/lib/security/apiGuard";
 
 export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
+  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  if (blocked) {
+    return blocked;
+  }
+
   try {
     const { text, voice = "af_bella" } = await request.json();
 

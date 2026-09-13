@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { guardApiRequest } from "@/lib/security/apiGuard";
 
 export const runtime = "edge";
 
@@ -8,6 +9,11 @@ export const runtime = "edge";
  * 用于语义搜索相关记忆（使用 LLM 评估相关性）
  */
 export async function POST(request: NextRequest) {
+  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  if (blocked) {
+    return blocked;
+  }
+
   try {
     const { query, memories, limit = 5 } = await request.json();
 

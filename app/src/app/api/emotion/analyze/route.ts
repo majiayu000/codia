@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import { guardApiRequest } from "@/lib/security/apiGuard";
 
 export const runtime = "edge";
 
@@ -48,6 +49,11 @@ Return a JSON object with:
 Always respond with valid JSON only, no additional text.`;
 
 export async function POST(request: NextRequest) {
+  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  if (blocked) {
+    return blocked;
+  }
+
   try {
     const body = await request.json();
     const { text, messages, provider = "openai", withContext = false } = body;

@@ -4,6 +4,7 @@
  */
 
 import type { Message } from "@/store/types";
+import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
 import type {
   MemoryExtractionResult,
   ExtractedMemory,
@@ -279,7 +280,7 @@ export class MemoryExtractor {
     try {
       const response = await fetch("/api/memory/extract", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getApiAuthHeaders(),
         body: JSON.stringify({
           prompt,
           provider: this.config.provider,
