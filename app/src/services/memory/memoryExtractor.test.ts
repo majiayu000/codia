@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { MemoryExtractor, createMemoryExtractor } from "./memoryExtractor";
 import type { Message } from "@/store/types";
 import type { MemoryEntry, UserProfile } from "./types";
+import {
+  ensureApiSession,
+  resetApiSessionCache,
+} from "@/lib/security/apiAuthHeaders";
 
 // Mock fetch for API calls
 const mockFetch = vi.fn();
@@ -73,8 +77,15 @@ describe("MemoryExtractor", () => {
   let extractor: MemoryExtractor;
   let mockLongTermMemory: MockLongTermMemory;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
+    resetApiSessionCache();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await ensureApiSession();
     mockFetch.mockReset();
     mockLongTermMemory = new MockLongTermMemory();
     // Cast to any to bypass type checking for mock
@@ -237,9 +248,8 @@ describe("MemoryExtractor", () => {
         "/api/memory/extract",
         expect.objectContaining({
           method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
+          credentials: "include",
+          headers: expect.any(Headers),
         })
       );
     });

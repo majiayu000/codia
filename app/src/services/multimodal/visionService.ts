@@ -3,7 +3,7 @@
  * 视觉服务 - 使用 LLM 进行图像分析
  */
 
-import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
+import { apiFetch } from "@/lib/security/apiAuthHeaders";
 import type {
   ImageAnalysisResult,
   DetectedObject,
@@ -161,9 +161,8 @@ Return the response as JSON with this structure:
   "confidence": number
 }`;
 
-    const response = await fetch("/api/vision/analyze", {
+    const response = await apiFetch("/api/vision/analyze", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         imageData,
         imageUrl,

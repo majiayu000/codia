@@ -49,7 +49,7 @@ Return a JSON object with:
 Always respond with valid JSON only, no additional text.`;
 
 export async function POST(request: NextRequest) {
-  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  const blocked = await guardApiRequest(request, { skipRateLimit: true });
   if (blocked) {
     return blocked;
   }

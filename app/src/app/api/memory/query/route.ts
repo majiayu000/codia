@@ -9,7 +9,7 @@ export const runtime = "edge";
  * 用于语义搜索相关记忆（使用 LLM 评估相关性）
  */
 export async function POST(request: NextRequest) {
-  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  const blocked = await guardApiRequest(request, { skipRateLimit: true });
   if (blocked) {
     return blocked;
   }

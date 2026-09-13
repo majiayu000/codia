@@ -4,7 +4,7 @@
  */
 
 import type { Message } from "@/store/types";
-import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
+import { apiFetch } from "@/lib/security/apiAuthHeaders";
 import type {
   MemoryExtractionResult,
   ExtractedMemory,
@@ -278,9 +278,8 @@ export class MemoryExtractor {
    */
   private async callExtractionAPI(prompt: string): Promise<MemoryExtractionResult> {
     try {
-      const response = await fetch("/api/memory/extract", {
+      const response = await apiFetch("/api/memory/extract", {
         method: "POST",
-        headers: getApiAuthHeaders(),
         body: JSON.stringify({
           prompt,
           provider: this.config.provider,

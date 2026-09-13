@@ -6,6 +6,10 @@ import {
   resetVisionService,
 } from "./visionService";
 import type { ImageAnalysisResult } from "./types";
+import {
+  ensureApiSession,
+  resetApiSessionCache,
+} from "@/lib/security/apiAuthHeaders";
 
 // Mock fetch for API calls
 const mockFetch = vi.fn();
@@ -14,8 +18,15 @@ global.fetch = mockFetch;
 describe("VisionService", () => {
   let service: VisionService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
+    resetApiSessionCache();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await ensureApiSession();
     mockFetch.mockReset();
     service = new VisionService();
     resetVisionService();
@@ -107,9 +118,8 @@ describe("VisionService", () => {
         "/api/vision/analyze",
         expect.objectContaining({
           method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
+          credentials: "include",
+          headers: expect.any(Headers),
         })
       );
     });

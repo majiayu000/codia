@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  API_SESSION_COOKIE,
+  verifySessionToken,
+} from "./apiSession";
 
-/** Max JSON/body size for /api/** POST requests (vision base64 needs headroom). */
+/** Default max JSON/body size for /api/** POST requests. */
 export const MAX_API_BODY_BYTES = 4 * 1024 * 1024; // 4 MiB
+
+/**
+ * Vision accepts up to 20 MiB raw images; base64 + JSON wrapper needs headroom
+ * (~20 MiB * 4/3 ≈ 27 MiB). Use 32 MiB for /api/vision/**.
+ */
+export const MAX_VISION_API_BODY_BYTES = 32 * 1024 * 1024;
 
 /** Sliding-window rate limit for unauthenticated abuse mitigation. */
 export const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -14,6 +24,8 @@ export type ApiGuardOptions = {
   skipRateLimit?: boolean;
   maxBodyBytes?: number;
   now?: number;
+  /** Override env for tests (CODIA_API_SECRET / CODIA_TRUST_PROXY). */
+  env?: NodeJS.ProcessEnv;
 };
 
 /**
@@ -47,16 +59,46 @@ export function extractBearerToken(request: NextRequest): string | null {
   return match?.[1]?.trim() || null;
 }
 
-export function getClientIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
+function trustProxyEnabled(env: NodeJS.ProcessEnv): boolean {
+  const value = env.CODIA_TRUST_PROXY?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
+/**
+ * Rate-limit client identity.
+ * Forwarding headers are only trusted when CODIA_TRUST_PROXY is enabled;
+ * otherwise use platform `request.ip` when present, else a single "direct" bucket
+ * (cannot be spoofed into unbounded Map growth).
+ */
+export function getClientIp(
+  request: NextRequest,
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  if (trustProxyEnabled(env)) {
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded) {
+      return forwarded.split(",")[0]?.trim() || "unknown";
+    }
+    return (
+      request.headers.get("x-real-ip")?.trim() ||
+      request.headers.get("cf-connecting-ip")?.trim() ||
+      "unknown"
+    );
   }
-  return (
-    request.headers.get("x-real-ip")?.trim() ||
-    request.headers.get("cf-connecting-ip")?.trim() ||
-    "unknown"
-  );
+
+  const platformIp = (request as NextRequest & { ip?: string | null }).ip;
+  if (platformIp && platformIp.trim()) {
+    return platformIp.trim();
+  }
+  return "direct";
+}
+
+/** Path-aware body limit (vision needs larger base64 payloads). */
+export function maxBodyBytesForPath(pathname: string): number {
+  if (pathname.startsWith("/api/vision/")) {
+    return MAX_VISION_API_BODY_BYTES;
+  }
+  return MAX_API_BODY_BYTES;
 }
 
 function unauthorized(message: string): NextResponse {
@@ -67,6 +109,13 @@ function tooLarge(maxBytes: number): NextResponse {
   return NextResponse.json(
     { error: `Request body too large (max ${maxBytes} bytes)` },
     { status: 413 }
+  );
+}
+
+function lengthRequired(): NextResponse {
+  return NextResponse.json(
+    { error: "Content-Length required" },
+    { status: 411 }
   );
 }
 
@@ -114,46 +163,76 @@ export function resetRateLimitBuckets(): void {
   rateLimitBuckets.clear();
 }
 
+/**
+ * Enforce Content-Length presence and max size.
+ * Rejects missing/non-numeric Content-Length so chunked bodies cannot bypass the limit.
+ */
 export function checkBodySize(
   request: NextRequest,
   maxBodyBytes: number = MAX_API_BODY_BYTES
 ): NextResponse | null {
   const contentLength = request.headers.get("content-length");
-  if (contentLength) {
-    const length = Number(contentLength);
-    if (Number.isFinite(length) && length > maxBodyBytes) {
-      return tooLarge(maxBodyBytes);
-    }
+  if (contentLength == null || contentLength.trim() === "") {
+    return lengthRequired();
+  }
+  const length = Number(contentLength);
+  if (!Number.isFinite(length) || length < 0) {
+    return lengthRequired();
+  }
+  if (length > maxBodyBytes) {
+    return tooLarge(maxBodyBytes);
   }
   return null;
 }
 
+async function hasValidSession(
+  request: NextRequest,
+  secret: string,
+  now: number
+): Promise<boolean> {
+  const token = request.cookies.get(API_SESSION_COOKIE)?.value;
+  if (!token) {
+    return false;
+  }
+  return verifySessionToken(secret, token, now);
+}
+
 /**
- * Shared-secret + body-size + rate-limit guard for /api/** POST handlers.
+ * Shared-secret / session + body-size + rate-limit guard for /api/** POST handlers.
  * Fail-closed when CODIA_API_SECRET is unset.
+ * Accepts Authorization: Bearer <CODIA_API_SECRET> or a valid httpOnly session cookie.
  */
-export function guardApiRequest(
+export async function guardApiRequest(
   request: NextRequest,
   options: ApiGuardOptions = {}
-): NextResponse | null {
-  const maxBodyBytes = options.maxBodyBytes ?? MAX_API_BODY_BYTES;
+): Promise<NextResponse | null> {
+  const env = options.env ?? process.env;
+  const maxBodyBytes =
+    options.maxBodyBytes ?? maxBodyBytesForPath(request.nextUrl.pathname);
   const bodyBlocked = checkBodySize(request, maxBodyBytes);
   if (bodyBlocked) {
     return bodyBlocked;
   }
 
-  const configured = getConfiguredApiSecret();
+  const configured = getConfiguredApiSecret(env);
   if (!configured) {
     return unauthorized("API access not configured");
   }
 
+  const now = options.now ?? Date.now();
   const token = extractBearerToken(request);
-  if (!token || !timingSafeEqualString(token, configured)) {
+  const bearerOk =
+    !!token && timingSafeEqualString(token, configured);
+  const sessionOk = bearerOk
+    ? false
+    : await hasValidSession(request, configured, now);
+
+  if (!bearerOk && !sessionOk) {
     return unauthorized("Unauthorized");
   }
 
   if (!options.skipRateLimit) {
-    const ip = getClientIp(request);
+    const ip = getClientIp(request, env);
     const { allowed, retryAfterSec } = checkRateLimit(`api:${ip}`, {
       now: options.now,
     });
@@ -166,4 +245,4 @@ export function guardApiRequest(
 }
 
 // Re-export client helpers for convenience in server/tests.
-export { getApiAuthHeaders, getClientApiSecret } from "./apiAuthHeaders";
+export { apiFetch, ensureApiSession, getApiAuthHeaders } from "./apiAuthHeaders";

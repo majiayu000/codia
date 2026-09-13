@@ -1,4 +1,4 @@
-import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
+import { apiFetch } from "@/lib/security/apiAuthHeaders";
 
 export interface TTSConfig {
   provider: "kokoro" | "elevenlabs" | "none";
@@ -54,9 +54,8 @@ async function synthesizeWithKokoro(
   config: TTSConfig
 ): Promise<TTSResult | null> {
   try {
-    const response = await fetch("/api/tts/kokoro", {
+    const response = await apiFetch("/api/tts/kokoro", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         text,
         voiceId: config.voiceId,
@@ -87,9 +86,8 @@ async function synthesizeWithElevenLabs(
   config: TTSConfig
 ): Promise<TTSResult | null> {
   try {
-    const response = await fetch("/api/tts/elevenlabs", {
+    const response = await apiFetch("/api/tts/elevenlabs", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         text,
         voiceId: config.voiceId,

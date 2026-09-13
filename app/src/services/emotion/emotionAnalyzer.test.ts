@@ -6,6 +6,10 @@ import {
 } from "./emotionAnalyzer";
 import type { EmotionAnalysisResult, ExtendedExpression } from "./types";
 import type { Message } from "@/store/types";
+import {
+  ensureApiSession,
+  resetApiSessionCache,
+} from "@/lib/security/apiAuthHeaders";
 
 // Mock fetch for API calls
 const mockFetch = vi.fn();
@@ -14,8 +18,15 @@ global.fetch = mockFetch;
 describe("EmotionAnalyzer", () => {
   let analyzer: EmotionAnalyzer;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    mockFetch.mockReset();
+    resetApiSessionCache();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await ensureApiSession();
     mockFetch.mockReset();
     analyzer = new EmotionAnalyzer();
   });
@@ -160,9 +171,8 @@ describe("EmotionAnalyzer", () => {
         "/api/emotion/analyze",
         expect.objectContaining({
           method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
+          credentials: "include",
+          headers: expect.any(Headers),
         })
       );
     });

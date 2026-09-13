@@ -2,11 +2,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-Copy environment defaults and set a shared API secret (required for `/api/**` POST routes):
+Copy environment defaults and set a server-only API secret (required for `/api/**` POST routes):
 
 ```bash
 cp .env.example .env.local
-# Set CODIA_API_SECRET and NEXT_PUBLIC_CODIA_API_SECRET to the same value
+# Set CODIA_API_SECRET to a long random value (never NEXT_PUBLIC_*)
 ```
 
 Then run the development server:
@@ -25,7 +25,12 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ### API access guard
 
-All `POST /api/**` routes require `Authorization: Bearer <CODIA_API_SECRET>`. Middleware and route handlers also enforce a 4 MiB body-size limit and a basic per-IP rate limit (60 req/min). Demo clients read `NEXT_PUBLIC_CODIA_API_SECRET` and send the same Bearer token. This is a shared-secret gate only — not full session/JWT auth.
+`POST /api/**` routes require either:
+
+- `Authorization: Bearer <CODIA_API_SECRET>` (scripts / external callers), or
+- a valid httpOnly session cookie from `GET /api/auth/session` (same-origin browser clients)
+
+Middleware and route handlers also enforce body-size limits (4 MiB default; 32 MiB for `/api/vision/**`) and a basic rate limit (60 req/min). Forwarding headers are trusted for rate-limit keys only when `CODIA_TRUST_PROXY` is enabled. This is a shared-secret / same-origin session gate — not full user/JWT auth.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

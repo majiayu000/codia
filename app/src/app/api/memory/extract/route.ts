@@ -6,7 +6,7 @@ import { guardApiRequest } from "@/lib/security/apiGuard";
 export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
-  const blocked = guardApiRequest(request, { skipRateLimit: true });
+  const blocked = await guardApiRequest(request, { skipRateLimit: true });
   if (blocked) {
     return blocked;
   }

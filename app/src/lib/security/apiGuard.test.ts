@@ -1,48 +1,67 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import {
+  MAX_API_BODY_BYTES,
+  MAX_VISION_API_BODY_BYTES,
   RATE_LIMIT_MAX_REQUESTS,
+  checkBodySize,
   checkRateLimit,
   extractBearerToken,
   getApiAuthHeaders,
-  getClientApiSecret,
+  getClientIp,
   getConfiguredApiSecret,
   guardApiRequest,
+  maxBodyBytesForPath,
   resetRateLimitBuckets,
   timingSafeEqualString,
 } from "./apiGuard";
+import { API_SESSION_COOKIE, createSessionToken } from "./apiSession";
 
 function makeRequest(
   options: {
     authorization?: string | null;
-    contentLength?: string;
+    contentLength?: string | null;
     ip?: string;
+    cookie?: string;
+    path?: string;
+    trustPlatformIp?: string;
   } = {}
 ): NextRequest {
   const headers = new Headers();
   if (options.authorization !== null && options.authorization !== undefined) {
     headers.set("authorization", options.authorization);
   }
-  if (options.contentLength) {
+  if (options.contentLength !== null && options.contentLength !== undefined) {
     headers.set("content-length", options.contentLength);
   }
   if (options.ip) {
     headers.set("x-forwarded-for", options.ip);
   }
-  return new NextRequest("http://localhost:3000/api/chat/openai", {
+  if (options.cookie) {
+    headers.set("cookie", `${API_SESSION_COOKIE}=${options.cookie}`);
+  }
+  const path = options.path ?? "/api/chat/openai";
+  const req = new NextRequest(`http://localhost:3000${path}`, {
     method: "POST",
     headers,
   });
+  if (options.trustPlatformIp) {
+    Object.defineProperty(req, "ip", {
+      value: options.trustPlatformIp,
+      configurable: true,
+    });
+  }
+  return req;
 }
 
 describe("apiGuard", () => {
   const originalSecret = process.env.CODIA_API_SECRET;
-  const originalPublicSecret = process.env.NEXT_PUBLIC_CODIA_API_SECRET;
+  const originalTrustProxy = process.env.CODIA_TRUST_PROXY;
 
   beforeEach(() => {
     resetRateLimitBuckets();
     process.env.CODIA_API_SECRET = "test-secret-value";
-    process.env.NEXT_PUBLIC_CODIA_API_SECRET = "test-secret-value";
+    delete process.env.CODIA_TRUST_PROXY;
   });
 
   afterEach(() => {
@@ -52,10 +71,10 @@ describe("apiGuard", () => {
     } else {
       process.env.CODIA_API_SECRET = originalSecret;
     }
-    if (originalPublicSecret === undefined) {
-      delete process.env.NEXT_PUBLIC_CODIA_API_SECRET;
+    if (originalTrustProxy === undefined) {
+      delete process.env.CODIA_TRUST_PROXY;
     } else {
-      process.env.NEXT_PUBLIC_CODIA_API_SECRET = originalPublicSecret;
+      process.env.CODIA_TRUST_PROXY = originalTrustProxy;
     }
   });
 
@@ -70,48 +89,46 @@ describe("apiGuard", () => {
     });
   });
 
-  describe("getConfiguredApiSecret / getClientApiSecret", () => {
+  describe("getConfiguredApiSecret", () => {
     it("reads trimmed secrets", () => {
       expect(getConfiguredApiSecret({ CODIA_API_SECRET: "  abc  " })).toBe(
         "abc"
       );
-      expect(
-        getClientApiSecret({ NEXT_PUBLIC_CODIA_API_SECRET: " xyz " })
-      ).toBe("xyz");
     });
 
     it("returns undefined when missing", () => {
       expect(getConfiguredApiSecret({})).toBeUndefined();
-      expect(getClientApiSecret({})).toBeUndefined();
     });
   });
 
   describe("extractBearerToken", () => {
     it("parses Bearer tokens", () => {
-      const req = makeRequest({ authorization: "Bearer my-token" });
+      const req = makeRequest({
+        authorization: "Bearer my-token",
+        contentLength: "10",
+      });
       expect(extractBearerToken(req)).toBe("my-token");
     });
 
     it("returns null when missing or malformed", () => {
-      expect(extractBearerToken(makeRequest({ authorization: null }))).toBe(
-        null
-      );
       expect(
-        extractBearerToken(makeRequest({ authorization: "Basic x" }))
+        extractBearerToken(
+          makeRequest({ authorization: null, contentLength: "10" })
+        )
+      ).toBe(null);
+      expect(
+        extractBearerToken(
+          makeRequest({ authorization: "Basic x", contentLength: "10" })
+        )
       ).toBe(null);
     });
   });
 
   describe("getApiAuthHeaders", () => {
-    it("includes Authorization when public secret is set", () => {
+    it("returns JSON content type without embedding a public bearer", () => {
       expect(getApiAuthHeaders()).toEqual({
         "Content-Type": "application/json",
-        Authorization: "Bearer test-secret-value",
       });
-    });
-
-    it("omits Authorization when public secret is unset", () => {
-      delete process.env.NEXT_PUBLIC_CODIA_API_SECRET;
       expect(getApiAuthHeaders({ "X-Custom": "1" })).toEqual({
         "Content-Type": "application/json",
         "X-Custom": "1",
@@ -119,11 +136,58 @@ describe("apiGuard", () => {
     });
   });
 
+  describe("getClientIp / trust proxy", () => {
+    it("ignores spoofable forwarded headers unless CODIA_TRUST_PROXY is set", () => {
+      const req = makeRequest({
+        authorization: "Bearer test-secret-value",
+        contentLength: "10",
+        ip: "9.9.9.9",
+      });
+      expect(getClientIp(req, {})).toBe("direct");
+      expect(getClientIp(req, { CODIA_TRUST_PROXY: "true" })).toBe("9.9.9.9");
+    });
+
+    it("prefers platform ip when proxy is not trusted", () => {
+      const req = makeRequest({
+        authorization: "Bearer test-secret-value",
+        contentLength: "10",
+        ip: "9.9.9.9",
+        trustPlatformIp: "10.0.0.1",
+      });
+      expect(getClientIp(req, {})).toBe("10.0.0.1");
+    });
+  });
+
+  describe("maxBodyBytesForPath", () => {
+    it("uses a larger limit for vision routes", () => {
+      expect(maxBodyBytesForPath("/api/chat/openai")).toBe(MAX_API_BODY_BYTES);
+      expect(maxBodyBytesForPath("/api/vision/analyze")).toBe(
+        MAX_VISION_API_BODY_BYTES
+      );
+    });
+  });
+
+  describe("checkBodySize", () => {
+    it("rejects missing Content-Length", async () => {
+      const res = checkBodySize(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: null,
+        })
+      );
+      expect(res?.status).toBe(411);
+      expect(await res?.json()).toEqual({ error: "Content-Length required" });
+    });
+  });
+
   describe("guardApiRequest", () => {
     it("returns 401 when secret config is missing", async () => {
       delete process.env.CODIA_API_SECRET;
-      const res = guardApiRequest(
-        makeRequest({ authorization: "Bearer test-secret-value" })
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: "10",
+        })
       );
       expect(res?.status).toBe(401);
       expect(await res?.json()).toEqual({
@@ -131,32 +195,60 @@ describe("apiGuard", () => {
       });
     });
 
-    it("returns 401 when Authorization is missing", async () => {
-      const res = guardApiRequest(makeRequest({ authorization: null }));
-      expect(res?.status).toBe(401);
-      expect(await res?.json()).toEqual({ error: "Unauthorized" });
-    });
-
-    it("returns 401 when token is invalid", async () => {
-      const res = guardApiRequest(
-        makeRequest({ authorization: "Bearer wrong-secret" })
+    it("returns 401 when Authorization and session are missing", async () => {
+      const res = await guardApiRequest(
+        makeRequest({ authorization: null, contentLength: "10" })
       );
       expect(res?.status).toBe(401);
       expect(await res?.json()).toEqual({ error: "Unauthorized" });
     });
 
-    it("passes when token matches CODIA_API_SECRET", () => {
-      const res = guardApiRequest(
+    it("returns 401 when token is invalid", async () => {
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer wrong-secret",
+          contentLength: "10",
+        })
+      );
+      expect(res?.status).toBe(401);
+      expect(await res?.json()).toEqual({ error: "Unauthorized" });
+    });
+
+    it("passes when token matches CODIA_API_SECRET", async () => {
+      const res = await guardApiRequest(
         makeRequest({
           authorization: "Bearer test-secret-value",
+          contentLength: "10",
           ip: "1.2.3.4",
         })
       );
       expect(res).toBeNull();
     });
 
+    it("passes when a valid session cookie is present", async () => {
+      const token = await createSessionToken("test-secret-value");
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "10",
+          cookie: token,
+        })
+      );
+      expect(res).toBeNull();
+    });
+
+    it("returns 411 when Content-Length is absent", async () => {
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: null,
+        })
+      );
+      expect(res?.status).toBe(411);
+    });
+
     it("returns 413 when Content-Length exceeds limit", async () => {
-      const res = guardApiRequest(
+      const res = await guardApiRequest(
         makeRequest({
           authorization: "Bearer test-secret-value",
           contentLength: String(5 * 1024 * 1024),
@@ -167,27 +259,52 @@ describe("apiGuard", () => {
       expect(body.error).toMatch(/too large/i);
     });
 
+    it("allows larger vision bodies under the vision limit", async () => {
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: String(20 * 1024 * 1024),
+          path: "/api/vision/analyze",
+        })
+      );
+      expect(res).toBeNull();
+    });
+
     it("returns 429 after rate limit is exceeded", async () => {
       const auth = "Bearer test-secret-value";
       for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
         expect(
-          guardApiRequest(makeRequest({ authorization: auth, ip: "9.9.9.9" }))
+          await guardApiRequest(
+            makeRequest({
+              authorization: auth,
+              contentLength: "10",
+              trustPlatformIp: "9.9.9.9",
+            })
+          )
         ).toBeNull();
       }
-      const blocked = guardApiRequest(
-        makeRequest({ authorization: auth, ip: "9.9.9.9" })
+      const blocked = await guardApiRequest(
+        makeRequest({
+          authorization: auth,
+          contentLength: "10",
+          trustPlatformIp: "9.9.9.9",
+        })
       );
       expect(blocked?.status).toBe(429);
       expect(await blocked?.json()).toEqual({ error: "Rate limit exceeded" });
       expect(blocked?.headers.get("Retry-After")).toBeTruthy();
     });
 
-    it("skips rate limit when skipRateLimit is set", () => {
+    it("skips rate limit when skipRateLimit is set", async () => {
       const auth = "Bearer test-secret-value";
       for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS + 5; i++) {
         expect(
-          guardApiRequest(
-            makeRequest({ authorization: auth, ip: "8.8.8.8" }),
+          await guardApiRequest(
+            makeRequest({
+              authorization: auth,
+              contentLength: "10",
+              trustPlatformIp: "8.8.8.8",
+            }),
             { skipRateLimit: true }
           )
         ).toBeNull();
@@ -203,9 +320,9 @@ describe("apiGuard", () => {
           i < 2
         );
       }
-      expect(checkRateLimit("k", { now: now + 1001, max: 2, windowMs: 1000 }).allowed).toBe(
-        true
-      );
+      expect(
+        checkRateLimit("k", { now: now + 1001, max: 2, windowMs: 1000 }).allowed
+      ).toBe(true);
     });
   });
 });

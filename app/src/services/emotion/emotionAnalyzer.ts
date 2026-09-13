@@ -4,7 +4,7 @@
  */
 
 import type { Message } from "@/store/types";
-import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
+import { apiFetch } from "@/lib/security/apiAuthHeaders";
 import type { BasicExpression } from "../expression";
 import type {
   EmotionAnalysisResult,
@@ -232,9 +232,8 @@ export class EmotionAnalyzer {
   // ================== Private Methods ==================
 
   private async callEmotionAPI(text: string): Promise<EmotionAnalysisResult> {
-    const response = await fetch("/api/emotion/analyze", {
+    const response = await apiFetch("/api/emotion/analyze", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         text,
         provider: this.config.provider,
@@ -256,9 +255,8 @@ export class EmotionAnalyzer {
       content: m.content,
     }));
 
-    const response = await fetch("/api/emotion/analyze", {
+    const response = await apiFetch("/api/emotion/analyze", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         messages: formattedMessages,
         provider: this.config.provider,

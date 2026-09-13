@@ -1,5 +1,5 @@
 import type { Message } from "@/store/types";
-import { getApiAuthHeaders } from "@/lib/security/apiAuthHeaders";
+import { apiFetch } from "@/lib/security/apiAuthHeaders";
 import type { BasicExpression } from "./expression";
 import { getLongTermMemory, getShortTermMemory, createMemoryExtractor } from "./memory";
 import type { MemoryContext } from "./memory";
@@ -79,9 +79,8 @@ export async function* streamChat(
   let fullContent = "";
 
   if (mergedConfig.provider === "openai") {
-    const response = await fetch("/api/chat/openai", {
+    const response = await apiFetch("/api/chat/openai", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         messages: formatMessagesForOpenAI(messages, systemPrompt),
         model: mergedConfig.model,
@@ -131,9 +130,8 @@ export async function* streamChat(
       systemPrompt
     );
 
-    const response = await fetch("/api/chat/anthropic", {
+    const response = await apiFetch("/api/chat/anthropic", {
       method: "POST",
-      headers: getApiAuthHeaders(),
       body: JSON.stringify({
         system,
         messages: formattedMessages,
