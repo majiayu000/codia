@@ -210,9 +210,40 @@ async function hasValidSession(
 }
 
 /**
+ * Session cookies are SameSite=Strict but still sent to sibling origins on the
+ * same registrable domain (Sec-Fetch-Site: same-site). Require same-origin
+ * browser signals before treating the cookie as authentication. Bearer clients
+ * are unaffected.
+ */
+export function isTrustedSessionRequest(request: NextRequest): boolean {
+  const secFetchSite = request.headers.get("sec-fetch-site")?.trim().toLowerCase();
+  if (secFetchSite) {
+    // "same-site" (sibling origin) and "cross-site" must not authenticate via cookie.
+    return secFetchSite === "same-origin" || secFetchSite === "none";
+  }
+
+  const origin = request.headers.get("origin")?.trim();
+  if (!origin) {
+    // No browser site signals — reject cookie auth (scripts should use Bearer).
+    return false;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    return (
+      originUrl.protocol === request.nextUrl.protocol &&
+      originUrl.host === request.nextUrl.host
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Shared-secret / session + body-size + rate-limit guard for /api/** POST handlers.
  * Fail-closed when CODIA_API_SECRET is unset.
- * Accepts Authorization: Bearer <CODIA_API_SECRET> or a valid httpOnly session cookie.
+ * Accepts Authorization: Bearer <CODIA_API_SECRET> or a valid httpOnly session cookie
+ * from a trusted same-origin browser request.
  *
  * Auth failures use `api:authfail:<ip>`; skipAuth unlock (POST /api/auth/session)
  * uses `api:preauth:<ip>`. Neither bucket shares quota with authenticated callers
@@ -250,9 +281,10 @@ export async function guardApiRequest(
     const token = extractBearerToken(request);
     const bearerOk =
       !!token && timingSafeEqualString(token, configured);
-    const sessionOk = bearerOk
-      ? false
-      : await hasValidSession(request, configured, now);
+    const sessionOk =
+      !bearerOk &&
+      (await hasValidSession(request, configured, now)) &&
+      isTrustedSessionRequest(request);
 
     if (!bearerOk && !sessionOk) {
       // Throttle credential probing before returning 401.

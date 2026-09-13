@@ -11,6 +11,7 @@ import {
   getClientIp,
   getConfiguredApiSecret,
   guardApiRequest,
+  isTrustedSessionRequest,
   maxBodyBytesForPath,
   resetRateLimitBuckets,
   timingSafeEqualString,
@@ -24,6 +25,8 @@ function makeRequest(
     ip?: string;
     cookie?: string;
     path?: string;
+    origin?: string | null;
+    secFetchSite?: string | null;
   } = {}
 ): NextRequest {
   const headers = new Headers();
@@ -38,6 +41,18 @@ function makeRequest(
   }
   if (options.cookie) {
     headers.set("cookie", `${API_SESSION_COOKIE}=${options.cookie}`);
+  }
+  if (options.origin !== null) {
+    headers.set(
+      "origin",
+      options.origin === undefined ? "http://localhost:3000" : options.origin
+    );
+  }
+  if (options.secFetchSite !== null && options.secFetchSite !== undefined) {
+    headers.set("sec-fetch-site", options.secFetchSite);
+  } else if (options.secFetchSite === undefined && options.cookie) {
+    // Cookie-authenticated same-origin browser default for tests.
+    headers.set("sec-fetch-site", "same-origin");
   }
   const path = options.path ?? "/api/chat/openai";
   return new NextRequest(`http://localhost:3000${path}`, {
@@ -290,6 +305,61 @@ describe("apiGuard", () => {
       expect(res).toBeNull();
     });
 
+    it("rejects session cookies from same-site sibling origins", async () => {
+      const token = await createSessionToken("test-secret-value");
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "10",
+          cookie: token,
+          origin: "http://usercontent.localhost:3000",
+          secFetchSite: "same-site",
+        })
+      );
+      expect(res?.status).toBe(401);
+      expect(await res?.json()).toEqual({ error: "Unauthorized" });
+    });
+
+    it("rejects session cookies without Origin/Sec-Fetch-Site signals", async () => {
+      const token = await createSessionToken("test-secret-value");
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "10",
+          cookie: token,
+          origin: null,
+          secFetchSite: null,
+        })
+      );
+      expect(res?.status).toBe(401);
+    });
+
+    it("still accepts Bearer auth from cross-site clients", async () => {
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: "Bearer test-secret-value",
+          contentLength: "10",
+          origin: "https://evil.example",
+          secFetchSite: "cross-site",
+        })
+      );
+      expect(res).toBeNull();
+    });
+
+    it("accepts matching Origin when Sec-Fetch-Site is absent", async () => {
+      const token = await createSessionToken("test-secret-value");
+      const res = await guardApiRequest(
+        makeRequest({
+          authorization: null,
+          contentLength: "10",
+          cookie: token,
+          origin: "http://localhost:3000",
+          secFetchSite: null,
+        })
+      );
+      expect(res).toBeNull();
+    });
+
     it("returns 411 when Content-Length is absent", async () => {
       const res = await guardApiRequest(
         makeRequest({
@@ -443,6 +513,50 @@ describe("apiGuard", () => {
         })
       );
       expect(authBlocked?.status).toBe(429);
+    });
+  });
+
+  describe("isTrustedSessionRequest", () => {
+    it("allows same-origin and none Sec-Fetch-Site", () => {
+      expect(
+        isTrustedSessionRequest(
+          makeRequest({
+            authorization: null,
+            contentLength: "10",
+            secFetchSite: "same-origin",
+          })
+        )
+      ).toBe(true);
+      expect(
+        isTrustedSessionRequest(
+          makeRequest({
+            authorization: null,
+            contentLength: "10",
+            secFetchSite: "none",
+          })
+        )
+      ).toBe(true);
+    });
+
+    it("rejects same-site and cross-site", () => {
+      expect(
+        isTrustedSessionRequest(
+          makeRequest({
+            authorization: null,
+            contentLength: "10",
+            secFetchSite: "same-site",
+          })
+        )
+      ).toBe(false);
+      expect(
+        isTrustedSessionRequest(
+          makeRequest({
+            authorization: null,
+            contentLength: "10",
+            secFetchSite: "cross-site",
+          })
+        )
+      ).toBe(false);
     });
   });
 

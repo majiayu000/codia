@@ -22,6 +22,11 @@ type SessionLockMessage = { type: "lock" } | { type: "unlock" };
 let sessionReady: Promise<void> | null = null;
 /** In-memory only — never written to Web Storage. */
 let unlockSecret: string | null = null;
+/**
+ * Bumped on every Lock (local or broadcast) so an in-flight mint that started
+ * before the lock can detect staleness and revoke the cookie it just set.
+ */
+let lockGeneration = 0;
 let sessionLockChannel: BroadcastChannel | null | undefined;
 let sessionLockListenerAttached = false;
 
@@ -44,6 +49,7 @@ function getSessionLockChannel(): BroadcastChannel | null {
 function clearLocalSessionState(): void {
   unlockSecret = null;
   sessionReady = null;
+  lockGeneration += 1;
 }
 
 function broadcastSessionLock(type: SessionLockMessage["type"]): void {
@@ -92,11 +98,28 @@ export function getApiUnlockSecret(): string | null {
   return unlockSecret;
 }
 
+async function revokeSessionCookie(): Promise<void> {
+  try {
+    await fetch("/api/auth/session", {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch (error) {
+    if (typeof console !== "undefined") {
+      console.warn("codia: failed to revoke stale API session cookie", error);
+    }
+  }
+}
+
 async function bootstrapSession(): Promise<void> {
+  const generationAtStart = lockGeneration;
   const status = await fetch("/api/auth/session", {
     method: "GET",
     credentials: "include",
   });
+  if (generationAtStart !== lockGeneration) {
+    throw new Error("API session mint aborted by lock");
+  }
   if (status.ok) {
     return;
   }
@@ -117,6 +140,11 @@ async function bootstrapSession(): Promise<void> {
     },
     body: JSON.stringify({}),
   });
+  if (generationAtStart !== lockGeneration) {
+    // Lock won the race: revoke any cookie this stale mint just set.
+    await revokeSessionCookie();
+    throw new Error("API session mint aborted by lock");
+  }
   if (!response.ok) {
     throw new Error(`API session unlock failed: ${response.status}`);
   }
@@ -219,10 +247,19 @@ export async function apiFetch(
     headers,
   });
 
-  // Cookie may have expired (12h TTL) or been cleared — clear cache and retry once.
-  // After a Lock broadcast from another tab, unlockSecret is null so this will not remint.
+  // Only remint+retry when our session cookie is actually invalid. Upstream
+  // providers (Kokoro/ElevenLabs/etc.) may also return 401 while the Codia
+  // session remains valid — retrying those would double-hit rate limits.
   if (response.status === 401) {
     sessionReady = null;
+    const sessionStatus = await fetch("/api/auth/session", {
+      method: "GET",
+      credentials: "include",
+    });
+    if (sessionStatus.ok) {
+      sessionReady = Promise.resolve();
+      return response;
+    }
     await ensureApiSession();
     return fetch(input, {
       ...init,

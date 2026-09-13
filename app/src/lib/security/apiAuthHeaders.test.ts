@@ -63,14 +63,16 @@ describe("apiAuthHeaders session bootstrap", () => {
     await expect(ensureApiSession()).rejects.toThrow(/unlock with CODIA_API_SECRET/i);
   });
 
-  it("retries once after a 401 from the provider route", async () => {
+  it("retries once after a guard 401 when the session cookie is invalid", async () => {
     setApiUnlockSecret("test-secret-value");
     mockFetch
       // ensureApiSession initial GET
       .mockResolvedValueOnce({ ok: true, status: 200 })
-      // first provider call → expired session
+      // first provider call → expired session (guard 401)
       .mockResolvedValueOnce({ ok: false, status: 401 })
-      // re-bootstrap GET → expired
+      // session-status GET after 401 → expired
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      // ensureApiSession re-bootstrap GET → expired
       .mockResolvedValueOnce({ ok: false, status: 401 })
       // re-bootstrap POST unlock
       .mockResolvedValueOnce({ ok: true, status: 200 })
@@ -82,10 +84,31 @@ describe("apiAuthHeaders session bootstrap", () => {
       body: "{}",
     });
     expect(res.ok).toBe(true);
-    expect(mockFetch).toHaveBeenCalledTimes(5);
-    expect(mockFetch.mock.calls[3][0]).toBe("/api/auth/session");
-    expect(mockFetch.mock.calls[3][1]).toMatchObject({ method: "POST" });
-    expect(mockFetch.mock.calls[4][0]).toBe("/api/chat/openai");
+    expect(mockFetch).toHaveBeenCalledTimes(6);
+    expect(mockFetch.mock.calls[4][0]).toBe("/api/auth/session");
+    expect(mockFetch.mock.calls[4][1]).toMatchObject({ method: "POST" });
+    expect(mockFetch.mock.calls[5][0]).toBe("/api/chat/openai");
+  });
+
+  it("does not retry upstream provider 401s when the session is still valid", async () => {
+    setApiUnlockSecret("test-secret-value");
+    mockFetch
+      // ensureApiSession initial GET
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      // provider returns upstream 401 (e.g. Kokoro key)
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      // session-status GET → still authenticated
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    const res = await apiFetch("/api/tts/kokoro", {
+      method: "POST",
+      body: "{}",
+    });
+    expect(res.status).toBe(401);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(
+      mockFetch.mock.calls.filter((call) => call[0] === "/api/tts/kokoro")
+    ).toHaveLength(1);
   });
 
   it("unlockApiSession always POSTs and keeps secret in memory only after success", async () => {
@@ -184,5 +207,52 @@ describe("apiAuthHeaders session bootstrap", () => {
           (call[1] as { method?: string } | undefined)?.method === "POST"
       )
     ).toHaveLength(0);
+  });
+
+  it("revokes cookies minted by in-flight bootstrap after a concurrent lock", async () => {
+    setApiUnlockSecret("memory-only-secret");
+
+    let resolvePost: ((value: { ok: boolean; status: number }) => void) | null =
+      null;
+    const postPromise = new Promise<{ ok: boolean; status: number }>((resolve) => {
+      resolvePost = resolve;
+    });
+
+    mockFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      if (url === "/api/auth/session" && init?.method === "GET") {
+        return Promise.resolve({ ok: false, status: 401 });
+      }
+      if (url === "/api/auth/session" && init?.method === "POST") {
+        return postPromise;
+      }
+      if (url === "/api/auth/session" && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      return Promise.resolve({ ok: true, status: 200 });
+    });
+
+    const mint = ensureApiSession();
+    // Wait until POST is in flight
+    await vi.waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some(
+          (call) =>
+            call[0] === "/api/auth/session" &&
+            (call[1] as { method?: string } | undefined)?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    await lockApiSession();
+    resolvePost?.({ ok: true, status: 200 });
+    await expect(mint).rejects.toThrow(/aborted by lock/i);
+
+    const deleteCalls = mockFetch.mock.calls.filter(
+      (call) =>
+        call[0] === "/api/auth/session" &&
+        (call[1] as { method?: string } | undefined)?.method === "DELETE"
+    );
+    // One DELETE from lockApiSession + one revoke from stale mint.
+    expect(deleteCalls.length).toBeGreaterThanOrEqual(2);
   });
 });
