@@ -255,4 +255,46 @@ describe("apiAuthHeaders session bootstrap", () => {
     // One DELETE from lockApiSession + one revoke from stale mint.
     expect(deleteCalls.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("revokes cookies from in-flight unlockApiSession after a concurrent lock", async () => {
+    let resolvePost: ((value: { ok: boolean; status: number }) => void) | null =
+      null;
+    const postPromise = new Promise<{ ok: boolean; status: number }>((resolve) => {
+      resolvePost = resolve;
+    });
+
+    mockFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      if (url === "/api/auth/session" && init?.method === "POST") {
+        return postPromise;
+      }
+      if (url === "/api/auth/session" && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      return Promise.resolve({ ok: true, status: 200 });
+    });
+
+    const unlock = unlockApiSession("memory-only-secret");
+    await vi.waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some(
+          (call) =>
+            call[0] === "/api/auth/session" &&
+            (call[1] as { method?: string } | undefined)?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    await lockApiSession();
+    resolvePost?.({ ok: true, status: 200 });
+    await expect(unlock).rejects.toThrow(/aborted by lock/i);
+    expect(getApiUnlockSecret()).toBeNull();
+
+    const deleteCalls = mockFetch.mock.calls.filter(
+      (call) =>
+        call[0] === "/api/auth/session" &&
+        (call[1] as { method?: string } | undefined)?.method === "DELETE"
+    );
+    // One DELETE from lockApiSession + one revoke from stale unlock.
+    expect(deleteCalls.length).toBeGreaterThanOrEqual(2);
+  });
 });

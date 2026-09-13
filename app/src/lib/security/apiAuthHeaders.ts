@@ -175,6 +175,10 @@ export async function unlockApiSession(secret: string): Promise<void> {
     throw new Error("API unlock secret required");
   }
 
+  // Capture generation so a cross-tab Lock during this POST cannot be undone by
+  // restoring unlockSecret/sessionReady (or by a Set-Cookie that races DELETE).
+  const generationAtStart = lockGeneration;
+
   const response = await fetch("/api/auth/session", {
     method: "POST",
     credentials: "include",
@@ -184,6 +188,11 @@ export async function unlockApiSession(secret: string): Promise<void> {
     },
     body: JSON.stringify({}),
   });
+  if (generationAtStart !== lockGeneration) {
+    // Lock won the race: revoke any cookie this stale unlock just set.
+    await revokeSessionCookie();
+    throw new Error("API session unlock aborted by lock");
+  }
   if (!response.ok) {
     throw new Error(`API session unlock failed: ${response.status}`);
   }
