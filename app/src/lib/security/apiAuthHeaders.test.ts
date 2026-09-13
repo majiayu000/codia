@@ -297,4 +297,63 @@ describe("apiAuthHeaders session bootstrap", () => {
     // One DELETE from lockApiSession + one revoke from stale unlock.
     expect(deleteCalls.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("does not revoke a newer unlock cookie when a stale bootstrap completes", async () => {
+    ensureSessionLockListener();
+    setApiUnlockSecret("memory-only-secret");
+
+    let resolveBootstrapPost:
+      | ((value: { ok: boolean; status: number }) => void)
+      | null = null;
+    const bootstrapPostPromise = new Promise<{ ok: boolean; status: number }>(
+      (resolve) => {
+        resolveBootstrapPost = resolve;
+      }
+    );
+    let bootstrapPostServed = false;
+
+    mockFetch.mockImplementation((url: string, init?: { method?: string }) => {
+      if (url === "/api/auth/session" && init?.method === "GET") {
+        return Promise.resolve({ ok: false, status: 401 });
+      }
+      if (url === "/api/auth/session" && init?.method === "POST") {
+        if (!bootstrapPostServed) {
+          bootstrapPostServed = true;
+          return bootstrapPostPromise;
+        }
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      if (url === "/api/auth/session" && init?.method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      return Promise.resolve({ ok: true, status: 200 });
+    });
+
+    const mint = ensureApiSession();
+    await vi.waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some(
+          (call) =>
+            call[0] === "/api/auth/session" &&
+            (call[1] as { method?: string } | undefined)?.method === "POST"
+        )
+      ).toBe(true);
+    });
+
+    await lockApiSession();
+    // A later unlock remints the shared cookie after the lock.
+    await unlockApiSession("memory-only-secret");
+
+    resolveBootstrapPost?.({ ok: true, status: 200 });
+    await expect(mint).rejects.toThrow(/aborted by lock/i);
+
+    const deleteCalls = mockFetch.mock.calls.filter(
+      (call) =>
+        call[0] === "/api/auth/session" &&
+        (call[1] as { method?: string } | undefined)?.method === "DELETE"
+    );
+    // Only the explicit lock DELETE — stale bootstrap must not revoke the newer unlock.
+    expect(deleteCalls).toHaveLength(1);
+    expect(getApiUnlockSecret()).toBe("memory-only-secret");
+  });
 });

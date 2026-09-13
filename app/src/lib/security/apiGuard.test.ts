@@ -23,6 +23,7 @@ function makeRequest(
     authorization?: string | null;
     contentLength?: string | null;
     ip?: string;
+    vercelIp?: string;
     cookie?: string;
     path?: string;
     origin?: string | null;
@@ -38,6 +39,9 @@ function makeRequest(
   }
   if (options.ip) {
     headers.set("x-forwarded-for", options.ip);
+  }
+  if (options.vercelIp) {
+    headers.set("x-vercel-forwarded-for", options.vercelIp);
   }
   if (options.cookie) {
     headers.set("cookie", `${API_SESSION_COOKIE}=${options.cookie}`);
@@ -161,6 +165,20 @@ describe("apiGuard", () => {
         ip: "203.0.113.10",
       });
       expect(getClientIp(req, { VERCEL: "1" })).toBe("203.0.113.10");
+    });
+
+    it("prefers x-vercel-forwarded-for over spoofable x-forwarded-for on Vercel", () => {
+      const req = makeRequest({
+        authorization: "Bearer test-secret-value",
+        contentLength: "10",
+        ip: "198.51.100.1",
+        vercelIp: "203.0.113.99",
+      });
+      expect(getClientIp(req, { VERCEL: "1" })).toBe("203.0.113.99");
+      // Self-hosted trusted proxy still prefers the configured generic header.
+      expect(
+        getClientIp(req, { CODIA_TRUST_PROXY: "true" })
+      ).toBe("198.51.100.1");
     });
 
     it("does not use removed NextRequest.ip; falls back to direct", () => {

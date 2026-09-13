@@ -18,6 +18,7 @@
 const SESSION_LOCK_CHANNEL = "codia-api-session";
 
 type SessionLockMessage = { type: "lock" } | { type: "unlock" };
+type SessionMutation = "lock" | "unlock";
 
 let sessionReady: Promise<void> | null = null;
 /** In-memory only — never written to Web Storage. */
@@ -27,6 +28,13 @@ let unlockSecret: string | null = null;
  * before the lock can detect staleness and revoke the cookie it just set.
  */
 let lockGeneration = 0;
+/**
+ * Last lock/unlock mutation observed locally or via BroadcastChannel.
+ * Stale mint cleanup must only DELETE when the latest mutation is still a
+ * lock — a later unlock (this tab or a peer) may have already reminted a
+ * valid cookie that must not be revoked.
+ */
+let lastSessionMutation: SessionMutation | null = null;
 let sessionLockChannel: BroadcastChannel | null | undefined;
 let sessionLockListenerAttached = false;
 
@@ -50,6 +58,22 @@ function clearLocalSessionState(): void {
   unlockSecret = null;
   sessionReady = null;
   lockGeneration += 1;
+  lastSessionMutation = "lock";
+}
+
+function noteSessionUnlock(): void {
+  lastSessionMutation = "unlock";
+}
+
+/**
+ * Revoke a cookie produced by a stale in-flight mint only when no newer
+ * unlock has superseded the lock that invalidated this attempt.
+ */
+async function revokeStaleMintCookie(): Promise<void> {
+  if (lastSessionMutation !== "lock") {
+    return;
+  }
+  await revokeSessionCookie();
 }
 
 function broadcastSessionLock(type: SessionLockMessage["type"]): void {
@@ -80,6 +104,11 @@ export function ensureSessionLockListener(): void {
   channel.addEventListener("message", (event: MessageEvent<SessionLockMessage>) => {
     if (event.data?.type === "lock") {
       clearLocalSessionState();
+    } else if (event.data?.type === "unlock") {
+      // Peer unlock reminted the shared cookie; do not restore unlockSecret
+      // (this tab may not have the secret), but mark the mutation so a stale
+      // pre-lock mint does not DELETE the newer session.
+      noteSessionUnlock();
     }
   });
   sessionLockListenerAttached = true;
@@ -141,8 +170,8 @@ async function bootstrapSession(): Promise<void> {
     body: JSON.stringify({}),
   });
   if (generationAtStart !== lockGeneration) {
-    // Lock won the race: revoke any cookie this stale mint just set.
-    await revokeSessionCookie();
+    // Lock won the race: revoke only if no newer unlock reminted the cookie.
+    await revokeStaleMintCookie();
     throw new Error("API session mint aborted by lock");
   }
   if (!response.ok) {
@@ -189,8 +218,8 @@ export async function unlockApiSession(secret: string): Promise<void> {
     body: JSON.stringify({}),
   });
   if (generationAtStart !== lockGeneration) {
-    // Lock won the race: revoke any cookie this stale unlock just set.
-    await revokeSessionCookie();
+    // Lock won the race: revoke only if no newer unlock reminted the cookie.
+    await revokeStaleMintCookie();
     throw new Error("API session unlock aborted by lock");
   }
   if (!response.ok) {
@@ -199,6 +228,7 @@ export async function unlockApiSession(secret: string): Promise<void> {
 
   unlockSecret = trimmed;
   sessionReady = Promise.resolve();
+  noteSessionUnlock();
   broadcastSessionLock("unlock");
 }
 
@@ -223,7 +253,10 @@ export async function lockApiSession(): Promise<void> {
 
 /** Reset cached session bootstrap (tests). */
 export function resetApiSessionCache(): void {
-  clearLocalSessionState();
+  unlockSecret = null;
+  sessionReady = null;
+  lockGeneration += 1;
+  lastSessionMutation = null;
 }
 
 /**

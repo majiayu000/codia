@@ -74,7 +74,23 @@ function isVercelRuntime(env: NodeJS.ProcessEnv): boolean {
   return env.VERCEL === "1" || env.VERCEL === "true";
 }
 
-function ipFromForwardingHeaders(request: NextRequest): string {
+/**
+ * Resolve client IP from forwarding headers.
+ * On Vercel, prefer platform-protected `x-vercel-forwarded-for` over
+ * caller-controlled `x-forwarded-for` so unauthenticated clients cannot
+ * rotate rate-limit keys by spoofing the generic header.
+ */
+function ipFromForwardingHeaders(
+  request: NextRequest,
+  preferVercelProtected: boolean
+): string {
+  if (preferVercelProtected) {
+    const vercelForwarded = request.headers.get("x-vercel-forwarded-for");
+    if (vercelForwarded) {
+      return vercelForwarded.split(",")[0]?.trim() || "unknown";
+    }
+  }
+
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     return forwarded.split(",")[0]?.trim() || "unknown";
@@ -90,7 +106,7 @@ function ipFromForwardingHeaders(request: NextRequest): string {
 /**
  * Rate-limit client identity.
  * Forwarding headers are trusted when CODIA_TRUST_PROXY is enabled or when
- * running on Vercel (platform-injected X-Forwarded-For). Next.js 16 removed
+ * running on Vercel (platform-injected forwarding headers). Next.js 16 removed
  * `request.ip`, so self-hosted deployments without a trusted proxy share a
  * single non-spoofable "direct" bucket instead of trusting client headers.
  */
@@ -98,8 +114,9 @@ export function getClientIp(
   request: NextRequest,
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  if (trustProxyEnabled(env) || isVercelRuntime(env)) {
-    return ipFromForwardingHeaders(request);
+  const onVercel = isVercelRuntime(env);
+  if (trustProxyEnabled(env) || onVercel) {
+    return ipFromForwardingHeaders(request, onVercel);
   }
 
   return "direct";
