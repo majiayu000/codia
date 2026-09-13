@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { cn } from "@/lib/utils";
+import { useUIStore } from "@/store";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -13,7 +14,7 @@ interface MainLayoutProps {
 export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [currentSection, setCurrentSection] = useState("chat");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const setSettingsOpen = useUIStore((state) => state.setSettingsOpen);
 
   const handleMenuToggle = () => {
     setIsSidebarOpen((prev) => !prev);
@@ -29,7 +30,7 @@ export function MainLayout({ children, showSidebar = true }: MainLayoutProps) {
       <Header
         onMenuToggle={handleMenuToggle}
         isSidebarOpen={isSidebarOpen}
-        onSettingsClick={() => setIsSettingsOpen(true)}
+        onSettingsClick={() => setSettingsOpen(true)}
       />
 
       <div className="flex flex-1 overflow-hidden">

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Bot, Volume2, Palette, Database } from "lucide-react";
 import { Button, Input, Modal } from "@/components/ui";
-import { unlockApiSession } from "@/lib/security/apiAuthHeaders";
+import { lockApiSession, unlockApiSession } from "@/lib/security/apiAuthHeaders";
 import { useSettingsStore, useCharacterStore } from "@/store";
 
 interface SettingsPanelProps {
@@ -26,11 +26,28 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     setApiUnlockStatus(null);
     try {
       await unlockApiSession(apiUnlockSecret);
-      setApiUnlockStatus("API session unlocked for this browser tab.");
+      setApiUnlockStatus(
+        "API session unlocked for ~12 hours across this browser (all tabs). Use Lock API session before leaving a shared machine."
+      );
       setApiUnlockSecret("");
     } catch (error) {
       setApiUnlockStatus(
         error instanceof Error ? error.message : "Failed to unlock API session"
+      );
+    } finally {
+      setApiUnlockBusy(false);
+    }
+  }
+
+  async function handleApiLock() {
+    setApiUnlockBusy(true);
+    setApiUnlockStatus(null);
+    try {
+      await lockApiSession();
+      setApiUnlockStatus("API session locked. Provider routes require unlock again.");
+    } catch (error) {
+      setApiUnlockStatus(
+        error instanceof Error ? error.message : "Failed to lock API session"
       );
     } finally {
       setApiUnlockBusy(false);
@@ -140,9 +157,10 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   </label>
                   <p className="mt-1 text-xs text-[var(--text-tertiary)]">
                     Enter the same server-only <code>CODIA_API_SECRET</code> once
-                    to mint an httpOnly session cookie. The secret is kept in
-                    memory only for this tab (never sessionStorage) and is not
-                    embedded in the client bundle.
+                    to mint an httpOnly session cookie (~12 hours, path=/, shared
+                    across tabs). Closing a tab does not revoke access—use Lock.
+                    The unlock secret stays in memory for this page only (never
+                    sessionStorage) and is not embedded in the client bundle.
                   </p>
                   <Input
                     type="password"
@@ -152,14 +170,23 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     className="mt-2"
                     autoComplete="off"
                   />
-                  <Button
-                    type="button"
-                    className="mt-2"
-                    disabled={apiUnlockBusy || !apiUnlockSecret.trim()}
-                    onClick={() => void handleApiUnlock()}
-                  >
-                    {apiUnlockBusy ? "Unlocking…" : "Unlock API session"}
-                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={apiUnlockBusy || !apiUnlockSecret.trim()}
+                      onClick={() => void handleApiUnlock()}
+                    >
+                      {apiUnlockBusy ? "Working…" : "Unlock API session"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={apiUnlockBusy}
+                      onClick={() => void handleApiLock()}
+                    >
+                      Lock API session
+                    </Button>
+                  </div>
                   {apiUnlockStatus && (
                     <p className="mt-2 text-xs text-[var(--text-secondary)]">
                       {apiUnlockStatus}

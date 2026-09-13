@@ -3,6 +3,7 @@ import {
   apiFetch,
   ensureApiSession,
   getApiUnlockSecret,
+  lockApiSession,
   resetApiSessionCache,
   setApiUnlockSecret,
   unlockApiSession,
@@ -129,5 +130,18 @@ describe("apiAuthHeaders session bootstrap", () => {
     setApiUnlockSecret(null);
     expect(getApiUnlockSecret()).toBeNull();
     expect(sessionStorageMock.removeItem).not.toHaveBeenCalled();
+  });
+
+  it("lockApiSession clears in-memory secret and DELETEs the session cookie", async () => {
+    setApiUnlockSecret("memory-only-secret");
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    await lockApiSession();
+    expect(getApiUnlockSecret()).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/auth/session");
+    expect(mockFetch.mock.calls[0][1]).toMatchObject({
+      method: "DELETE",
+      credentials: "include",
+    });
   });
 });

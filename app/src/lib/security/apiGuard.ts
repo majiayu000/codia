@@ -284,6 +284,7 @@ export {
   apiFetch,
   ensureApiSession,
   getApiAuthHeaders,
+  lockApiSession,
   setApiUnlockSecret,
   unlockApiSession,
 } from "./apiAuthHeaders";

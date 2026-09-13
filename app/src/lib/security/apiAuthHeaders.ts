@@ -95,9 +95,26 @@ export async function unlockApiSession(secret: string): Promise<void> {
   sessionReady = Promise.resolve();
 }
 
+/**
+ * Clear the httpOnly API session cookie and in-memory unlock secret.
+ * Use on shared machines so closing the tab is not mistaken for revocation.
+ */
+export async function lockApiSession(): Promise<void> {
+  unlockSecret = null;
+  sessionReady = null;
+  const response = await fetch("/api/auth/session", {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`API session lock failed: ${response.status}`);
+  }
+}
+
 /** Reset cached session bootstrap (tests). */
 export function resetApiSessionCache(): void {
   sessionReady = null;
+  unlockSecret = null;
 }
 
 /**

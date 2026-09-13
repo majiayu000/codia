@@ -82,3 +82,16 @@ export async function POST(request: NextRequest) {
   response.cookies.set(API_SESSION_COOKIE, token, sessionCookieOptions());
   return response;
 }
+
+/**
+ * Clear the httpOnly API session cookie (operator lock / shared-machine handoff).
+ * Does not require credentials — possession of the cookie is enough to clear it.
+ */
+export async function DELETE() {
+  const response = NextResponse.json({ ok: true, locked: true });
+  response.cookies.set(API_SESSION_COOKIE, "", {
+    ...sessionCookieOptions(0),
+    maxAge: 0,
+  });
+  return response;
+}
