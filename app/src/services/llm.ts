@@ -177,6 +177,68 @@ export async function* streamChat(
         }
       }
     }
+  } else if (mergedConfig.provider === "ollama") {
+    const response = await fetch("/api/chat/ollama", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: formatMessagesForOpenAI(messages, systemPrompt),
+        model: mergedConfig.model,
+        temperature: mergedConfig.temperature,
+        max_tokens: mergedConfig.maxTokens,
+        baseUrl: mergedConfig.baseUrl,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const errorBody = await response.json();
+        if (errorBody?.error) {
+          detail = errorBody.error;
+        }
+      } catch {
+        // Keep statusText when body is not JSON
+      }
+      throw new Error(`Ollama API error: ${detail}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error("No response body");
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
+
+      for (const line of lines) {
+        const data = line.slice(6);
+        if (data === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) {
+            throw new Error(String(parsed.error));
+          }
+          const token = parsed.choices?.[0]?.delta?.content || "";
+          if (token) {
+            fullContent += token;
+            yield token;
+          }
+        } catch (error) {
+          // Ignore incomplete chunk parse failures; rethrow API errors
+          if (error instanceof SyntaxError) continue;
+          throw error;
+        }
+      }
+    }
   } else {
     throw new Error(`Unsupported provider: ${mergedConfig.provider}`);
   }
