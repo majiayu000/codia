@@ -14,7 +14,7 @@ import {
   useUIStore,
 } from "@/store";
 import {
-  streamChat,
+  streamChatWithMemory,
   startListening,
   stopListening,
   isASRSupported,
@@ -74,19 +74,24 @@ export default function Home() {
           content: "",
         });
 
-        // Stream response
+        // Stream response with memory injection + emotion-aware strategy
         const allMessages = chatStore.getCurrentMessages();
-        const generator = streamChat(
+        const generator = streamChatWithMemory(
           allMessages.slice(0, -1), // Exclude placeholder
           currentCharacter.systemPrompt,
           {
             provider: settingsStore.llmProvider,
             model: settingsStore.llmModel,
+            enableMemory: settingsStore.memoryEnabled,
+            extractMemoryAfterResponse: settingsStore.memoryEnabled,
+            enableEmotionAnalysis: settingsStore.emotionEnabled,
+            applyResponseStrategy: settingsStore.emotionEnabled,
           }
         );
 
-        for await (const token of generator) {
-          assistantContent += token;
+        let streamResult = await generator.next();
+        while (!streamResult.done) {
+          assistantContent += streamResult.value;
 
           // Update the last message with accumulated content
           const msgs = chatStore.getCurrentMessages();
@@ -98,12 +103,15 @@ export default function Home() {
               assistantContent
             );
           }
+          streamResult = await generator.next();
         }
 
-        // Set expression based on response
-        const result = await generator.next();
-        if (result.done && result.value.emotion) {
-          setExpression(result.value.emotion);
+        // Set expression based on response; sync memory context into chat store
+        if (streamResult.value.emotion) {
+          setExpression(streamResult.value.emotion);
+        }
+        if (streamResult.value.memoryContext) {
+          chatStore.setMemoryContext(streamResult.value.memoryContext);
         }
 
         // Trigger speaking animation
@@ -132,6 +140,8 @@ export default function Home() {
       currentCharacter.systemPrompt,
       settingsStore.llmProvider,
       settingsStore.llmModel,
+      settingsStore.memoryEnabled,
+      settingsStore.emotionEnabled,
       uiStore,
       addToast,
     ]

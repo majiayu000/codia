@@ -113,6 +113,42 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     )}
                   </select>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="memory-enabled"
+                    checked={settings.memoryEnabled}
+                    onChange={(e) =>
+                      settings.updateSettings({ memoryEnabled: e.target.checked })
+                    }
+                    className="h-4 w-4 rounded border-[var(--border-default)]"
+                  />
+                  <label
+                    htmlFor="memory-enabled"
+                    className="text-sm text-[var(--text-primary)]"
+                  >
+                    Enable long-term memory
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="emotion-enabled"
+                    checked={settings.emotionEnabled}
+                    onChange={(e) =>
+                      settings.updateSettings({ emotionEnabled: e.target.checked })
+                    }
+                    className="h-4 w-4 rounded border-[var(--border-default)]"
+                  />
+                  <label
+                    htmlFor="emotion-enabled"
+                    className="text-sm text-[var(--text-primary)]"
+                  >
+                    Enable emotion-aware responses
+                  </label>
+                </div>
               </div>
             </div>
           )}

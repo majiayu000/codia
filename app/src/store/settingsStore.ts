@@ -8,6 +8,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   ttsProvider: "none",
   ttsVoice: "default",
   asrEnabled: false,
+  memoryEnabled: true,
+  emotionEnabled: true,
   theme: "system",
   language: "en",
 };

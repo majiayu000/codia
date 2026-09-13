@@ -34,6 +34,8 @@ export interface AppSettings {
   ttsProvider: "kokoro" | "elevenlabs" | "none";
   ttsVoice: string;
   asrEnabled: boolean;
+  memoryEnabled: boolean;
+  emotionEnabled: boolean;
   theme: "light" | "dark" | "system";
   language: "en" | "zh" | "ja";
 }
